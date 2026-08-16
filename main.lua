@@ -71,6 +71,15 @@ function love.load(args)
               end)
           end)
 
+          -- 多行编辑器
+          c:divider({ text = "多行编辑器 Editor" })
+          c:editor({
+              h = 140,
+              lineNumbers = true,
+              text = "第一行\n第二行\n第三行：支持中文输入、上下左右、退格、回车、鼠标选区与滚动。",
+              onChange = function(v) print("[editor] 内容更新（" .. #v .. " 字节）") end,
+          })
+
           -- 选择控件
           c:divider({ text = "选择控件 Checkbox / Switch / Radio" })
           c:box({ direction = "row", gap = 16 }, function(r)

@@ -9,6 +9,7 @@ local Box = require("lumi.widgets.box")
 local Label = require("lumi.widgets.label")
 local Button = require("lumi.widgets.button")
 local Input = require("lumi.widgets.input")
+local Editor = require("lumi.widgets.editor")
 local Checkbox = require("lumi.widgets.checkbox")
 local Switch = require("lumi.widgets.switch")
 local Radio = require("lumi.widgets.radio")
@@ -186,6 +187,126 @@ local function testInput()
     li:arrange(0, 0, 200, 60)
     li:draw()
     check("input 正文字体不被 label 泄漏", love.graphics.getFont() == font.get(theme.font.body))
+end
+
+local function testEditor()
+    local e = Editor.new({})
+    e:arrange(0, 0, 200, 100)
+
+    -- 多行文本与行索引
+    e:setText("ab\ncd")
+    eq("editor 设置多行文本", e:getText(), "ab\ncd")
+    eq("editor 行数", e:lineCount(), 2)
+    eq("editor 第2行起始", e:lineStart(2), 3)
+    eq("editor 第1行文本", e:getLineText(1), "ab")
+    eq("editor 第2行文本", e:getLineText(2), "cd")
+
+    -- 行/列换算
+    local row, col = e:offsetToRowCol(0)
+    eq("editor 偏移0在第1行", row, 1)
+    eq("editor 偏移0列", col, 0)
+    row, col = e:offsetToRowCol(4)
+    eq("editor 偏移4在第2行", row, 2)
+    eq("editor 偏移4列", col, 1)
+    eq("editor 行列转偏移", e:rowColToOffset(2, 1), 4)
+
+    -- 光标移动：右移跨行、down 到最后一行
+    e:setText("ab\ncd")
+    e.cursor = 2
+    e:moveHorizontal(1, false)
+    eq("editor 右移跨行到第2行", e.cursor, 3)
+    e:moveVertical(1, false)
+    eq("editor down 到最后一行", e.cursor, 5)
+
+    -- 回车插入换行
+    e:setText("ab\ncd")
+    e.cursor = 2
+    e:keypressed("return", nil)
+    eq("editor 回车插入换行", e:getText(), "ab\n\ncd")
+    eq("editor 回车后行数", e:lineCount(), 3)
+
+    -- backspace 行首合并行 / delete 行尾合并行
+    e:setText("ab\ncd")
+    e.cursor = 3
+    e:keypressed("backspace", nil)
+    eq("editor 行首退格合并行", e:getText(), "abcd")
+    e:setText("ab\ncd")
+    e.cursor = 2
+    e:keypressed("delete", nil)
+    eq("editor 行尾删除合并行", e:getText(), "abcd")
+
+    -- 选区替换与删除
+    e:setText("abcdef")
+    e:selectRange(0, 3)
+    e:textinput("X", nil)
+    eq("editor 选区替换", e:getText(), "Xdef")
+    e:setText("abcdef")
+    e:selectRange(0, 3)
+    e:keypressed("backspace", nil)
+    eq("editor 退格删除选区", e:getText(), "def")
+
+    -- 中文多字节移动/退格
+    e:setText("你好\n世界")
+    e.cursor = 0
+    e:moveHorizontal(1, false)
+    eq("editor 中文右移一个字符", e.cursor, 3)
+    e:moveHorizontal(1, false)
+    eq("editor 中文右移到行尾", e.cursor, 6)
+    e:moveHorizontal(1, false)
+    eq("editor 中文右移跨行", e.cursor, 7)
+    e:keypressed("backspace", nil)
+    eq("editor 中文行首退格合并", e:getText(), "你好世界")
+
+    -- onChange 触发
+    local changed
+    e.props.onChange = function(v) changed = v end
+    e:setText("x")
+    eq("editor onChange 触发", changed, "x")
+
+    -- 查找
+    e:setText("hello world")
+    local fs, fe = e:find("world")
+    eq("editor find 起始", fs, 6)
+    eq("editor find 结束", fe, 11)
+
+    -- 渲染冒烟（聚焦/选区/行号）
+    e:setText("第一行\n第二行\n第三行")
+    e.state.focused = true
+    e._selAnchor = 0
+    e.cursor = #e._text
+    e:arrange(0, 0, 200, 60)
+    e:draw()
+    check("editor 绘制（选区）", true)
+    local ln = Editor.new({ text = "1\n2\n3", lineNumbers = true })
+    ln.state.focused = true
+    ln:arrange(0, 0, 200, 80)
+    ln:draw()
+    check("editor 绘制（行号）", true)
+
+    -- 滚动条拖动
+    local sc = Editor.new({ text = ("长行内容\n"):rep(30) })
+    sc:arrange(0, 0, 200, 80)
+    check("editor 纵向滚动条存在", sc:hasVScrollbar())
+    sc:mousepressed(194, 40, 1, nil)
+    check("editor 点击滚动条进入拖动", sc._dragScroll == "v")
+    check("editor 点击滚动条产生滚动", sc.scrollY > 0)
+    sc:mousereleased(nil, nil, 1, nil, nil)
+    check("editor 释放清除拖动状态", sc._dragScroll == nil)
+
+    -- 滚轮路由：editor 在外层 scroll 容器内时，滚轮应作用到 editor 而非外层
+    local ui = lumi.new()
+    ui:root({ direction = "column" }, function(r)
+        r:scroll({ w = 200, h = 200, direction = "column" }, function(s)
+            s:editor({ h = 60, text = ("长行\n"):rep(30) })
+        end)
+    end)
+    ui:update(1 / 60)
+    local outer = ui.root.children[1]
+    local ed = outer.children[1]
+    ui:mousemoved(100, 30)
+    ui:wheelmoved(0, -5)
+    check("editor 滚轮滚动自身", ed.scrollY > 0)
+    check("editor 滚轮不冒泡到外层", outer.scrollY == 0)
 end
 
 local function testSelection()
@@ -399,6 +520,7 @@ function M.run()
     testButton()
     testAnimate()
     testInput()
+    testEditor()
     testSelection()
     testSlider()
     testDropdown()
