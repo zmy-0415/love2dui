@@ -1,0 +1,1 @@
+"C:\workspace\love2dsrc\build\love.exe" .

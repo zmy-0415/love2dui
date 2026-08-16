@@ -1,0 +1,501 @@
+--[[
+    context.lua —— 场景调度器（对外主入口 lumi.new() 返回的对象）
+    维护 UI 树、悬停/焦点/按下状态、悬浮层（下拉/菜单/弹窗）、tooltip、toast。
+    负责把 love.* 事件转发给对应控件。
+]]
+
+local theme = require("lumi.theme")
+local animate = require("lumi.animate")
+local event = require("lumi.event")
+local font = require("lumi.font")
+local draw = require("lumi.draw")
+local tooltip = require("lumi.widgets.tooltip")
+
+local Box = require("lumi.widgets.box")
+local Label = require("lumi.widgets.label")
+local Button = require("lumi.widgets.button")
+local Input = require("lumi.widgets.input")
+local Checkbox = require("lumi.widgets.checkbox")
+local Switch = require("lumi.widgets.switch")
+local Radio = require("lumi.widgets.radio")
+local Slider = require("lumi.widgets.slider")
+local Progress = require("lumi.widgets.progress")
+local Dropdown = require("lumi.widgets.dropdown")
+local Tabs = require("lumi.widgets.tabs")
+local Table = require("lumi.widgets.table")
+local Tree = require("lumi.widgets.tree")
+local Menu = require("lumi.widgets.menu")
+local Dialog = require("lumi.widgets.dialog")
+local Divider = require("lumi.widgets.divider")
+local Scroll = require("lumi.widgets.scroll")
+
+local Scene = {}
+Scene.__index = Scene
+
+-- ---------------- Builder 构造辅助 ----------------
+
+local function textWidget(ctor)
+    return function(self, a, b)
+        local props
+        if type(a) == "table" then
+            props = a
+        else
+            props = b or {}
+            props.text = a
+        end
+        return self:add(ctor(props))
+    end
+end
+
+local function propWidget(ctor)
+    return function(self, props)
+        return self:add(ctor(props or {}))
+    end
+end
+
+local function container(ctor)
+    return function(self, props, childrenFn)
+        return self:add(ctor(props or {}), childrenFn)
+    end
+end
+
+Scene.box = container(Box.new)
+Scene.panel = container(Box.new)
+Scene.scroll = container(Scroll.new)
+Scene.tabs = container(Tabs.new)
+Scene.label = textWidget(Label.new)
+Scene.button = textWidget(Button.new)
+Scene.input = propWidget(Input.new)
+Scene.checkbox = propWidget(Checkbox.new)
+Scene.switch = propWidget(Switch.new)
+Scene.radio = propWidget(Radio.new)
+Scene.slider = propWidget(Slider.new)
+Scene.progress = propWidget(Progress.new)
+Scene.dropdown = propWidget(Dropdown.new)
+Scene.table = propWidget(Table.new)
+Scene.tree = propWidget(Tree.new)
+Scene.menu = propWidget(Menu.new)
+Scene.divider = propWidget(Divider.new)
+
+-- 注册自定义控件构造器，使其可通过 ui:name(...) 使用
+-- kind: "text"（首参为文本）、"props"（仅 props 表）、"container"（可含子节点）
+function Scene.register(name, ctor, kind)
+    kind = kind or "props"
+    if kind == "text" then
+        Scene[name] = textWidget(ctor)
+    elseif kind == "container" then
+        Scene[name] = container(ctor)
+    else
+        Scene[name] = propWidget(ctor)
+    end
+    return Scene
+end
+
+-- ---------------- 生命周期 ----------------
+
+function Scene.new()
+    local self = setmetatable({}, Scene)
+    self._cursor = nil
+    self.root = nil
+    self.overlays = {}
+    self.modal = nil
+    self.hover = nil
+    self.focus = nil
+    self.pressed = nil
+    self._mouseX, self._mouseY = 0, 0
+    self.width = love.graphics.getWidth()
+    self.height = love.graphics.getHeight()
+    self._layoutDirty = true
+    self._tooltipTarget = nil
+    self._tooltipTimer = 0
+    self.tooltipNode = nil
+    self.toasts = {}
+    return self
+end
+
+function Scene:setTheme(mode)
+    if type(mode) == "table" then
+        theme.apply(mode)
+    else
+        theme.set(mode)
+    end
+    self:invalidateLayout()
+    return self
+end
+
+-- 标记布局失效并清空测量缓存（主题切换 / 动态增删节点 / resize 时）
+function Scene:invalidateLayout()
+    if self.root then self.root:clearMeasureCache() end
+    self._layoutDirty = true
+end
+
+function Scene:root(props, childrenFn)
+    local node = Box.new(props or {})
+    self.root = node
+    node._ctx = self
+    self._cursor = node
+    if childrenFn then
+        childrenFn(self)
+    end
+    return self
+end
+
+-- 添加控件到当前游标位置；带 childrenFn 时临时切换游标并在结束后恢复
+function Scene:add(node, childrenFn)
+    local parent = self._cursor
+    if not parent then
+        error("缺少父节点，请先调用 ui:root()", 2)
+    end
+    parent:addChild(node)
+    node._ctx = self
+    if childrenFn then
+        local prev = self._cursor
+        self._cursor = node
+        childrenFn(self)
+        self._cursor = prev
+    elseif node.acceptsChildren then
+        self._cursor = node
+    end
+    return self
+end
+
+-- 返回上一级容器（用于链式构建时退出当前容器）
+function Scene:up()
+    if self._cursor and self._cursor.parent then
+        self._cursor = self._cursor.parent
+    end
+    return self
+end
+
+-- ---------------- 悬浮层 ----------------
+
+function Scene:openOverlay(node, opts)
+    opts = opts or {}
+    node._overlayOpts = opts
+    node._ctx = self
+    if opts.modal then self.modal = node end
+    table.insert(self.overlays, node)
+    if node.w and node.h then
+        node:arrange(node.x, node.y, node.w, node.h)
+    end
+    return node
+end
+
+function Scene:closeOverlay(node)
+    for i, o in ipairs(self.overlays) do
+        if o == node then
+            table.remove(self.overlays, i)
+            if self.modal == node then self.modal = nil end
+            if node._overlayOpts and node._overlayOpts.onClose then
+                node._overlayOpts.onClose()
+            end
+            return true
+        end
+    end
+    return false
+end
+
+function Scene:closeTopOverlay()
+    local top = self.overlays[#self.overlays]
+    if top then
+        self:closeOverlay(top)
+        return true
+    end
+    return false
+end
+
+function Scene:closeAllOverlays()
+    while #self.overlays > 0 do
+        self:closeOverlay(self.overlays[#self.overlays])
+    end
+end
+
+-- ---------------- 命中与焦点 ----------------
+
+function Scene:hitTest(x, y)
+    if self.modal then
+        if self.modal:contains(x, y) then return self.modal:hitTest(x, y) end
+        return nil
+    end
+    for i = #self.overlays, 1, -1 do
+        local o = self.overlays[i]
+        if o:contains(x, y) then return o:hitTest(x, y) end
+    end
+    if self.root then return self.root:hitTest(x, y) end
+    return nil
+end
+
+function Scene:setFocus(node)
+    if self.focus == node then return end
+    if self.focus then self.focus:blur() end
+    self.focus = node
+    if node then node:focus() end
+end
+
+function Scene:focusNext(reverse)
+    local list = {}
+    event.collectFocusable(self.root, list)
+    if #list == 0 then return end
+    local idx = 0
+    for i, n in ipairs(list) do
+        if n == self.focus then idx = i; break end
+    end
+    local next
+    if reverse then
+        next = (idx > 1) and list[idx - 1] or list[#list]
+    else
+        next = (idx < #list) and list[idx + 1] or list[1]
+    end
+    self:setFocus(next)
+end
+
+-- ---------------- 输入事件 ----------------
+
+function Scene:_press(hit, x, y, button)
+    if hit then
+        self.pressed = hit
+        hit.state.pressed = true
+        if hit:isFocusable() then
+            self:setFocus(hit)
+        elseif hit:isInteractive() then
+            self:setFocus(nil)
+        end
+        hit:mousepressed(x, y, button, self)
+    else
+        self:setFocus(nil)
+    end
+end
+
+function Scene:mousepressed(x, y, button)
+    self._mouseX, self._mouseY = x, y
+    if self.modal then
+        local d = self.modal
+        if d:contains(x, y) then
+            self:_press(d:hitTest(x, y), x, y, button)
+        else
+            local opts = d._overlayOpts or {}
+            if opts.closeOnOutside ~= false then self:closeOverlay(d) end
+        end
+        return
+    end
+    if #self.overlays > 0 then
+        local top = self.overlays[#self.overlays]
+        if top:contains(x, y) then
+            self:_press(top:hitTest(x, y), x, y, button)
+        else
+            self:closeOverlay(top)
+        end
+        return
+    end
+    local hit = self.root and self.root:hitTest(x, y) or nil
+    self:_press(hit, x, y, button)
+end
+
+function Scene:mousereleased(x, y, button)
+    local hit
+    if self.modal then
+        if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
+    elseif #self.overlays > 0 then
+        local top = self.overlays[#self.overlays]
+        if top:contains(x, y) then hit = top:hitTest(x, y) end
+    else
+        hit = self.root and self.root:hitTest(x, y) or nil
+    end
+    local pressed = self.pressed
+    if pressed then
+        pressed:mousereleased(x, y, button, self, hit)
+        pressed.state.pressed = false
+        self.pressed = nil
+    end
+end
+
+function Scene:mousemoved(x, y)
+    self._mouseX, self._mouseY = x, y
+    local hit
+    if self.modal then
+        if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
+    elseif #self.overlays > 0 then
+        local top = self.overlays[#self.overlays]
+        if top:contains(x, y) then hit = top:hitTest(x, y) end
+    else
+        hit = self.root and self.root:hitTest(x, y) or nil
+    end
+    if hit ~= self.hover then
+        if self.hover then
+            self.hover.state.hovered = false
+            self.hover:onHoverLeave()
+        end
+        self.hover = hit
+        if hit then
+            hit.state.hovered = true
+            hit:onHoverEnter()
+        end
+    end
+    if self.pressed then self.pressed:mousemoved(x, y, self) end
+
+    -- tooltip 触发
+    local target = (hit and hit.props and hit.props.tooltip) and hit or nil
+    if target ~= self._tooltipTarget then
+        self._tooltipTarget = target
+        self._tooltipTimer = 0.5
+        self.tooltipNode = nil
+    end
+end
+
+function Scene:wheelmoved(x, y)
+    local hit
+    if self.modal then
+        if self.modal:contains(self._mouseX, self._mouseY) then hit = self.modal:hitTest(self._mouseX, self._mouseY) end
+    elseif #self.overlays > 0 then
+        local top = self.overlays[#self.overlays]
+        if top:contains(self._mouseX, self._mouseY) then hit = top:hitTest(self._mouseX, self._mouseY) end
+    else
+        hit = self.root and self.root:hitTest(self._mouseX, self._mouseY) or nil
+    end
+    local n = hit
+    while n do
+        if n.isScroll then
+            n:wheelmoved(x, y, self)
+            break
+        end
+        n = n.parent
+    end
+end
+
+function Scene:keypressed(key)
+    if key == "escape" then
+        if #self.overlays > 0 then
+            self:closeTopOverlay()
+            return
+        end
+        if self.focus then self:setFocus(nil) end
+        return
+    end
+    if key == "tab" then
+        local reverse = love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+        self:focusNext(reverse)
+        return
+    end
+    if self.focus then self.focus:keypressed(key, self) end
+end
+
+function Scene:textinput(t)
+    if self.focus then self.focus:textinput(t, self) end
+end
+
+function Scene:textedited(text, start, length)
+    if self.focus then self.focus:textedited(text, start, length, self) end
+end
+
+function Scene:resize(w, h)
+    self.width, self.height = w, h
+    self._layoutDirty = true
+end
+
+-- ---------------- 弹窗 / 提示 ----------------
+
+function Scene:dialog(props, childrenFn)
+    props = props or {}
+    local d = Dialog.new(props)
+    if childrenFn then
+        local prev = self._cursor
+        self._cursor = d
+        childrenFn(self)
+        self._cursor = prev
+    end
+    local w = props.w or 420
+    local _, h = d:measure(w, self.height)
+    h = math.min(h, self.height - 80)
+    d.x = math.floor((self.width - w) / 2)
+    d.y = math.floor((self.height - h) / 2)
+    d.w = w
+    d.h = h
+    self:openOverlay(d, { modal = true, closeOnOutside = props.dismissible ~= false })
+    return d
+end
+
+function Scene:toast(msg)
+    table.insert(self.toasts, { text = msg, t = 0, dur = 2.5 })
+    return self
+end
+
+-- ---------------- 更新与绘制 ----------------
+
+function Scene:update(dt)
+    animate.update(dt)
+    if self.root then
+        self.root:update(dt)
+    end
+    for _, o in ipairs(self.overlays) do
+        o:update(dt)
+    end
+    -- 仅在布局脏时重排（构建/动态增删/主题切换/resize），滚动与动画帧不再全量重排
+    if self._layoutDirty then
+        self._layoutDirty = false
+        if self.root then
+            self.root:arrange(0, 0, self.width, self.height)
+        end
+        for _, o in ipairs(self.overlays) do
+            if o.w and o.h then o:arrange(o.x, o.y, o.w, o.h) end
+        end
+    end
+    -- 聚焦输入框时，持续把系统文本输入区域同步到其最新位置（输入法候选窗定位）
+    if self.focus and self.focus.updateTextInput then
+        self.focus:updateTextInput()
+    end
+    -- tooltip
+    if self._tooltipTarget then
+        self._tooltipTimer = self._tooltipTimer - dt
+        if self._tooltipTimer <= 0 and not self.tooltipNode then
+            self.tooltipNode = tooltip.make(self._tooltipTarget.props.tooltip)
+        end
+    else
+        self.tooltipNode = nil
+    end
+    -- toasts
+    for i = #self.toasts, 1, -1 do
+        local t = self.toasts[i]
+        t.t = t.t + dt
+        if t.t > t.dur then table.remove(self.toasts, i) end
+    end
+end
+
+function Scene:drawToasts()
+    local f = font.get(theme.font.body)
+    local n = #self.toasts
+    for i, t in ipairs(self.toasts) do
+        local fadeIn = math.min(1, t.t / 0.2)
+        local fadeOut = math.min(1, (t.dur - t.t) / 0.4)
+        local alpha = math.min(fadeIn, fadeOut)
+        local text = t.text
+        local tw = f:getWidth(text)
+        local bw = tw + 32
+        local bh = 40
+        local bx = (self.width - bw) / 2
+        local by = self.height - 90 - (n - i) * (bh + 10)
+        draw.roundRect(bx, by, bw, bh, 20, { 0.10, 0.10, 0.10, 0.92 * alpha })
+        draw.text(text, bx + 16, by + (bh - f:getHeight()) / 2, 0, { font = f, color = { 1, 1, 1, alpha } })
+    end
+end
+
+function Scene:draw()
+    love.graphics.clear(theme.color("background"))
+    if self.root then self.root:draw() end
+    for _, o in ipairs(self.overlays) do
+        o:draw()
+    end
+    if self.tooltipNode then
+        local tw, th = self.tooltipNode:measure(400, 100)
+        local tx = self._mouseX + 14
+        local ty = self._mouseY + 18
+        if tx + tw > self.width then tx = self._mouseX - tw - 14 end
+        if ty + th > self.height then ty = self._mouseY - th - 18 end
+        self.tooltipNode:arrange(tx, ty, tw, th)
+        self.tooltipNode:draw()
+    end
+    if #self.toasts > 0 then
+        self:drawToasts()
+    end
+end
+
+return Scene
