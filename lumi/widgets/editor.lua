@@ -1,13 +1,12 @@
 --[[
     editor.lua —— 多行文本编辑器
     支持多行文本、光标/选区（跨行）、UTF-8 与中文 IME、剪贴板、纵向/横向滚动、
-    行号栏（lineNumbers）、onChange/onSubmit。
+    行号栏（lineNumbers）、撤销/重做（Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z）、
+    语法高亮（props.highlight）、查找/替换（setFindText/findNext/findPrev/replace/replaceAll）、onChange。
 
-    为后续扩展预留的接口：
-      - 语法高亮：覆写 renderLine(font, lineText, lineIdx, x, y, color) 按片段着色
-      - 撤销/重做：所有文本修改统一走 _replace(a, b, text)，配合 snapshot()/restore()
-      - 行号显示：props.lineNumbers + drawLineNumbers()/gutterW()
-      - 查找/替换：find(text, from) 返回字节区间，scrollToOffset()/selectRange() 定位
+    扩展点：
+      - 语法高亮：props.highlight(lineText, lineIdx) 返回 {from,to,color} 分段，或覆写 renderLine
+      - 撤销/重做：所有修改统一走 _replace(a, b, text)，命令栈由 snapshot()/restore() 支撑
       - 软换行（word wrap）：渲染已按「可见行」循环，未来可在此引入视觉行迭代
 ]]
 
@@ -46,6 +45,10 @@ function Editor.new(props)
     self.scrollX = 0
     self.scrollY = 0
     self._dragScroll = nil
+    self._undoStack = {}
+    self._redoStack = {}
+    self._findText = nil
+    self._matches = nil
     return self
 end
 
@@ -63,6 +66,8 @@ function Editor:setText(text)
     self._linesDirty = true
     self.scrollX = 0
     self.scrollY = 0
+    self._undoStack = {}
+    self._redoStack = {}
     self:invalidate()
     self:emit("onChange", self._text)
 end
@@ -73,6 +78,10 @@ end
 function Editor:_replace(a, b, newText)
     a = math.max(0, math.min(#self._text, a))
     b = math.max(a, math.min(#self._text, b))
+    -- 记录撤销快照（所有文本修改统一走此入口，为撤销/重做提供命令栈）
+    self._undoStack[#self._undoStack + 1] = self:snapshot()
+    if #self._undoStack > 500 then table.remove(self._undoStack, 1) end
+    self._redoStack = {}
     self._text = self._text:sub(1, a) .. (newText or "") .. self._text:sub(b + 1)
     self.cursor = a + #(newText or "")
     self._selAnchor = nil
@@ -218,6 +227,119 @@ function Editor:find(text, from)
     return s - 1, s - 1 + #text
 end
 
+-- ---------------- 查找/替换 ----------------
+
+-- 返回所有匹配区间列表（0-based 字节 [from, to)）
+function Editor:findAll(text)
+    local out = {}
+    if not text or #text == 0 then return out end
+    local from = 0
+    while true do
+        local s = self._text:find(text, from + 1, true)
+        if not s then break end
+        out[#out + 1] = { from = s - 1, to = s - 1 + #text }
+        from = s - 1 + #text
+    end
+    return out
+end
+
+-- 设置查找词并缓存所有匹配（渲染时高亮）；nil/空串清除
+function Editor:setFindText(text)
+    if text and #text > 0 then
+        self._findText = text
+        self._matches = self:findAll(text)
+    else
+        self._findText = nil
+        self._matches = nil
+    end
+end
+
+-- 按方向返回 offset 之后/之前最近的匹配
+function Editor:findMatch(offset, dir)
+    local ms = self._matches
+    if not ms or #ms == 0 then return nil end
+    if dir >= 0 then
+        for i = 1, #ms do
+            if ms[i].from >= offset then return ms[i] end
+        end
+    else
+        for i = #ms, 1, -1 do
+            if ms[i].to <= offset then return ms[i] end
+        end
+    end
+    return nil
+end
+
+-- 选中并滚动到下一个匹配（越界则从头部循环）
+function Editor:findNext()
+    if not self._findText then return nil end
+    local m = self:findMatch(self.cursor, 1) or self:findMatch(0, 1)
+    if m then
+        self:selectRange(m.from, m.to)
+        self:scrollToOffset(m.to)
+    end
+    return m
+end
+
+-- 选中并滚动到上一个匹配（越界则从尾部循环）
+function Editor:findPrev()
+    if not self._findText then return nil end
+    local m = self:findMatch(self.cursor, -1) or self:findMatch(#self._text, -1)
+    if m then
+        self:selectRange(m.from, m.to)
+        self:scrollToOffset(m.from)
+    end
+    return m
+end
+
+-- 替换当前选区（若为查找匹配）或下一个匹配；返回是否替换
+function Editor:replace(replacement)
+    local m
+    if self:hasSelection() then
+        local a, b = self:selectionRange()
+        if self._findText and b - a == #self._findText
+            and self._text:sub(a + 1, b) == self._findText then
+            m = { from = a, to = b }
+        end
+    end
+    if not m then
+        m = self:findMatch(self.cursor, 1) or self:findMatch(0, 1)
+    end
+    if not m then return false end
+    self:_replace(m.from, m.to, replacement or "")
+    self:setFindText(self._findText)
+    self:scrollToCursor()
+    return true
+end
+
+-- 替换全部匹配，返回替换数量
+function Editor:replaceAll(text, replacement)
+    if not text or #text == 0 then return 0 end
+    self._undoStack[#self._undoStack + 1] = self:snapshot()
+    if #self._undoStack > 500 then table.remove(self._undoStack, 1) end
+    self._redoStack = {}
+    local n = 0
+    local offset = 0
+    while true do
+        local s = self._text:find(text, offset + 1, true)
+        if not s then break end
+        local a, b = s - 1, s - 1 + #text
+        self._text = self._text:sub(1, a) .. (replacement or "") .. self._text:sub(b + 1)
+        offset = a + #(replacement or "")
+        n = n + 1
+    end
+    if n > 0 then
+        self.cursor = math.min(self.cursor, #self._text)
+        self._selAnchor = nil
+        self._prefCol = nil
+        self._linesDirty = true
+        self:invalidate()
+        self:emit("onChange", self._text)
+        self:setFindText(self._findText)
+    end
+    return n
+end
+
 -- 撤销/重做扩展的接口：快照与恢复
 function Editor:snapshot()
     return {
@@ -239,6 +361,22 @@ function Editor:restore(snap)
     self._prefCol = nil
     self._linesDirty = true
     self:invalidate()
+end
+
+function Editor:undo()
+    if #self._undoStack == 0 then return end
+    self._redoStack[#self._redoStack + 1] = self:snapshot()
+    self:restore(table.remove(self._undoStack))
+    self:emit("onChange", self._text)
+    self:scrollToCursor()
+end
+
+function Editor:redo()
+    if #self._redoStack == 0 then return end
+    self._undoStack[#self._undoStack + 1] = self:snapshot()
+    self:restore(table.remove(self._redoStack))
+    self:emit("onChange", self._text)
+    self:scrollToCursor()
 end
 
 -- ---------------- 尺寸与滚动 ----------------
@@ -498,6 +636,10 @@ function Editor:keypressed(key, ctx)
             self:cut()
         elseif key == "v" then
             self:paste()
+        elseif key == "z" then
+            if isShift() then self:redo() else self:undo() end
+        elseif key == "y" then
+            self:redo()
         elseif key == "home" then
             self._selAnchor = nil
             self.cursor = 0
@@ -635,11 +777,44 @@ end
 
 -- ---------------- 绘制 ----------------
 
--- 单行渲染（语法高亮扩展点：覆写本方法按 token 分段着色）
+-- 单行渲染（语法高亮扩展点：可覆写本方法；默认支持 props.highlight 回调分段着色）
 function Editor:renderLine(fontObj, lineText, lineIdx, x, y, color)
     love.graphics.setFont(fontObj)
+    local hl = self.props.highlight
+    if hl then
+        local segs = hl(lineText, lineIdx)
+        if segs and #segs > 0 then
+            self:renderHighlighted(fontObj, lineText, x, y, color, segs)
+            return
+        end
+    end
     love.graphics.setColor(color)
     love.graphics.print(lineText, x, y)
+end
+
+-- 按分段着色绘制一行（segs: {{from=字节, to=字节, color=色名/颜色表}, ...}，0-based 半开）
+function Editor:renderHighlighted(fontObj, lineText, x, y, color, segs)
+    local sorted = {}
+    for _, s in ipairs(segs) do sorted[#sorted + 1] = s end
+    table.sort(sorted, function(a, b) return (a.from or 0) < (b.from or 0) end)
+    local last = 0
+    for _, s in ipairs(sorted) do
+        local from = math.max(last, s.from or 0)
+        local to = math.min(#lineText, s.to or #lineText)
+        if to > from then
+            if from > last then
+                love.graphics.setColor(color)
+                love.graphics.print(lineText:sub(last + 1, from), x + fontObj:getWidth(lineText:sub(1, last)), y)
+            end
+            love.graphics.setColor(self:resolveColor(s.color) or color)
+            love.graphics.print(lineText:sub(from + 1, to), x + fontObj:getWidth(lineText:sub(1, from)), y)
+            last = to
+        end
+    end
+    if last < #lineText then
+        love.graphics.setColor(color)
+        love.graphics.print(lineText:sub(last + 1), x + fontObj:getWidth(lineText:sub(1, last)), y)
+    end
 end
 
 function Editor:drawLineNumbers(firstRow, lastRow, ty, viewH)
@@ -711,6 +886,20 @@ function Editor:drawContent()
                 local x1 = textX + f:getWidth(self._text:sub(ls + 1, b))
                 love.graphics.setColor(theme.alpha("primary", 0.28))
                 love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
+            end
+        end
+
+        -- 查找匹配高亮（warning 底色，区别于选区）
+        if self._matches and #self._matches > 0 then
+            for _, m in ipairs(self._matches) do
+                local a = math.max(m.from, ls)
+                local b = math.min(m.to, le)
+                if b > a then
+                    local x0 = textX + f:getWidth(self._text:sub(ls + 1, a))
+                    local x1 = textX + f:getWidth(self._text:sub(ls + 1, b))
+                    love.graphics.setColor(theme.alpha("warning", 0.32))
+                    love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
+                end
             end
         end
 

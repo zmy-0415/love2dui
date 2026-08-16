@@ -307,6 +307,52 @@ local function testEditor()
     ui:wheelmoved(0, -5)
     check("editor 滚轮滚动自身", ed.scrollY > 0)
     check("editor 滚轮不冒泡到外层", outer.scrollY == 0)
+
+    -- 撤销/重做
+    local u = Editor.new({})
+    u:arrange(0, 0, 200, 40)
+    u:textinput("a", nil)
+    u:textinput("b", nil)
+    eq("editor 输入后文本", u:getText(), "ab")
+    u:undo()
+    eq("editor undo 一次", u:getText(), "a")
+    u:undo()
+    eq("editor undo 两次", u:getText(), "")
+    u:redo()
+    eq("editor redo 一次", u:getText(), "a")
+    u:redo()
+    eq("editor redo 两次", u:getText(), "ab")
+    u:textinput("c", nil)
+    u:redo()
+    eq("editor 新编辑后 redo 栈已清空", u:getText(), "abc")
+
+    -- 语法高亮（highlight 回调 + 渲染冒烟）
+    local hlCalls = 0
+    local hl = Editor.new({
+        text = "local x = 123",
+        highlight = function(lineText, lineIdx)
+            hlCalls = hlCalls + 1
+            local segs = {}
+            local s = lineText:find("local", 1, true)
+            if s then segs[#segs + 1] = { from = s - 1, to = s - 1 + 5, color = "primary" } end
+            return segs
+        end,
+    })
+    hl:arrange(0, 0, 200, 40)
+    hl:draw()
+    check("editor 语法高亮回调被调用", hlCalls > 0)
+
+    -- 查找/替换
+    local ft = Editor.new({ text = "foo bar foo" })
+    ft:arrange(0, 0, 200, 40)
+    ft:setFindText("foo")
+    eq("editor 查找匹配数", #ft._matches, 2)
+    local m = ft:findNext()
+    check("editor 查找下一个", m ~= nil and m.from == 0 and m.to == 3)
+    ft:replace("FOO")
+    eq("editor 替换下一个", ft:getText(), "FOO bar foo")
+    eq("editor 替换全部数量", ft:replaceAll("foo", "X"), 1)
+    eq("editor 替换全部结果", ft:getText(), "FOO bar X")
 end
 
 local function testSelection()

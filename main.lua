@@ -72,11 +72,31 @@ function love.load(args)
           end)
 
           -- 多行编辑器
-          c:divider({ text = "多行编辑器 Editor" })
+          c:divider({ text = "多行编辑器 Editor（撤销/重做 Ctrl+Z/Y、语法高亮、行号）" })
           c:editor({
               h = 140,
               lineNumbers = true,
-              text = "第一行\n第二行\n第三行：支持中文输入、上下左右、退格、回车、鼠标选区与滚动。",
+              text = "local x = 42\nfor i = 1, 10 do\n  x = x + i\nend\nreturn x",
+              highlight = function(lineText, lineIdx)
+                  local segs = {}
+                  local s = 1
+                  while true do
+                      local a, b = lineText:find("%d+", s)
+                      if not a then break end
+                      segs[#segs + 1] = { from = a - 1, to = b, color = "warning" }
+                      s = b + 1
+                  end
+                  for _, kw in ipairs({ "local", "for", "do", "end", "return" }) do
+                      local p = 1
+                      while true do
+                          local a, b = lineText:find(kw, p, true)
+                          if not a then break end
+                          segs[#segs + 1] = { from = a - 1, to = b, color = "primary" }
+                          p = b + 1
+                      end
+                  end
+                  return segs
+              end,
               onChange = function(v) print("[editor] 内容更新（" .. #v .. " 字节）") end,
           })
 
