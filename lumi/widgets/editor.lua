@@ -95,7 +95,7 @@ end
 function Editor:rebuildLines()
     local starts = { 0 }
     local text = self._text
-    local f = font.get(theme.font.body)
+    local f = self:bodyFont()
     local maxW = 0
     local pos = 0
     while true do
@@ -385,8 +385,21 @@ function Editor:padding()
     return 12, 8
 end
 
+-- 正文字体：支持 props.fontSize 覆盖（编辑器缩放），默认沿用主题 body 字号
+function Editor:bodyFont()
+    return font.get(self.props.fontSize or theme.font.body)
+end
+
+-- 行号字体：随 fontSize 缩放，默认沿用主题 caption 字号
+function Editor:captionFont()
+    if self.props.fontSize then
+        return font.get(math.max(9, self.props.fontSize - 2))
+    end
+    return font.get(theme.font.caption)
+end
+
 function Editor:lineHeight()
-    return font.get(theme.font.body):getHeight()
+    return self:bodyFont():getHeight()
 end
 
 -- 滚动条预留宽度（纵向/横向滚动条占用，避免文本被遮挡）
@@ -399,7 +412,7 @@ function Editor:gutterW()
     local n = self:lineCount()
     local digits = 1
     while n >= 10 do n = math.floor(n / 10); digits = digits + 1 end
-    local cf = font.get(theme.font.caption)
+    local cf = self:captionFont()
     return 10 + digits * cf:getWidth("0") + 10
 end
 
@@ -499,7 +512,7 @@ end
 function Editor:scrollToOffset(offset)
     local row = self:offsetToRowCol(offset)
     local lh = self:lineHeight()
-    local f = font.get(theme.font.body)
+    local f = self:bodyFont()
     local rowTop = (row - 1) * lh
     local viewH = self:viewHeight()
     if rowTop < self.scrollY then
@@ -763,7 +776,7 @@ end
 
 -- 按行内 x 坐标定位列（沿字符边界遍历，返回字节偏移）
 function Editor:colFromX(lineText, tx)
-    local f = font.get(theme.font.body)
+    local f = self:bodyFont()
     local best, bestDist = 0, math.huge
     local i = 0
     while true do
@@ -820,7 +833,7 @@ end
 function Editor:drawLineNumbers(firstRow, lastRow, ty, viewH)
     local gutter = self:gutterW()
     if gutter <= 0 then return end
-    local cf = font.get(theme.font.caption)
+    local cf = self:captionFont()
     local lh = self:lineHeight()
     love.graphics.setColor(theme.color("border"))
     love.graphics.rectangle("fill", self.x + self:padding() + gutter - 5, ty, 1, viewH)
@@ -836,7 +849,7 @@ end
 
 function Editor:drawContent()
     local p = self.props
-    local f = font.get(theme.font.body)
+    local f = self:bodyFont()
     local lh = self:lineHeight()
     local padX, padY = self:padding()
     local gutter = self:gutterW()
