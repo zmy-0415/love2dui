@@ -29,6 +29,10 @@ local Menu = require("lumi.widgets.menu")
 local Dialog = require("lumi.widgets.dialog")
 local Divider = require("lumi.widgets.divider")
 local Scroll = require("lumi.widgets.scroll")
+local Image = require("lumi.widgets.image")
+local Avatar = require("lumi.widgets.avatar")
+local Icon = require("lumi.widgets.icon")
+local Carousel = require("lumi.widgets.carousel")
 
 local Scene = {}
 Scene.__index = Scene
@@ -78,6 +82,10 @@ Scene.table = propWidget(Table.new)
 Scene.tree = propWidget(Tree.new)
 Scene.menu = propWidget(Menu.new)
 Scene.divider = propWidget(Divider.new)
+Scene.image = propWidget(Image.new)
+Scene.avatar = propWidget(Avatar.new)
+Scene.icon = textWidget(Icon.new)
+Scene.carousel = propWidget(Carousel.new)
 
 -- 注册自定义控件构造器，使其可通过 ui:name(...) 使用
 -- kind: "text"（首参为文本）、"props"（仅 props 表）、"container"（可含子节点）

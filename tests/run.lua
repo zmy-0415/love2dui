@@ -24,8 +24,14 @@ local Dialog = require("lumi.widgets.dialog")
 local Divider = require("lumi.widgets.divider")
 local Scroll = require("lumi.widgets.scroll")
 local tooltip = require("lumi.widgets.tooltip")
+local Image = require("lumi.widgets.image")
+local Avatar = require("lumi.widgets.avatar")
+local IconW = require("lumi.widgets.icon")
+local Carousel = require("lumi.widgets.carousel")
+local res = require("lumi.image")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
+local draw = require("lumi.draw")
 local Rating = require("demo.rating")
 
 local M = {}
@@ -493,6 +499,131 @@ local function testRating()
     check("rating 点击第1颗", rating.value == 1 and rv == 1)
 end
 
+-- ---------------- 图片组件 ----------------
+
+local function testImage()
+    -- 占位图生成与缓存
+    local ph = res.placeholder("t1", 64, 40)
+    check("placeholder 生成 Canvas", ph ~= nil and ph:getWidth() == 64 and ph:getHeight() == 40)
+    check("placeholder 缓存复用", res.placeholder("t1", 64, 40) == ph)
+
+    -- 资源加载：路径失败安全返回 nil
+    check("res.load 不存在的路径返回 nil", res.load("not_exists.png") == nil)
+    check("res.load 可绘制对象透传", res.load(ph) == ph)
+    check("res.load 函数源", res.load(function() return ph end) == ph)
+
+    -- fit 布局计算
+    local dx, dy, dw, dh = draw.calcFit(64, 40, 100, 100, "cover")
+    eq("calcFit cover 铺满", math.floor(dw + 0.5), 160)
+    dx, dy, dw, dh = draw.calcFit(64, 40, 100, 100, "contain")
+    eq("calcFit contain 放入", math.floor(dw + 0.5), 100)
+    dx, dy, dw, dh = draw.calcFit(64, 40, 100, 50, "contain")
+    eq("calcFit contain 高受限", math.floor(dh + 0.5), 50)
+    dx, dy, dw, dh = draw.calcFit(64, 40, 100, 100, "center")
+    eq("calcFit center 原始尺寸", dw, 64)
+    dx, dy, dw, dh = draw.calcFit(64, 40, 100, 100, "stretch")
+    eq("calcFit stretch", dw == 100 and dh == 100, true)
+
+    -- Image 测量：显式 w 按比例推导 h
+    local img = Image.new({ src = ph, w = 128 })
+    local mw, mh = img:measure(nil, nil)
+    eq("image 显式宽度按比例", math.floor(mh + 0.5), 80)
+    -- 无图时占位尺寸可测、可绘制
+    local fb = Image.new({ w = 80, h = 60 })
+    fb:measure(nil, nil)
+    fb:arrange(0, 0, 80, 60)
+    fb:draw()
+    check("image 无图占位绘制", true)
+    -- 圆角 + cover 绘制冒烟（stencil 路径）
+    img:arrange(0, 0, 128, 80)
+    img.props.radius = "medium"
+    img:draw()
+    check("image 圆角绘制", true)
+    -- 点击回调
+    local clicked = false
+    local btn = Image.new({ src = ph, w = 50, h = 50, onClick = function() clicked = true end })
+    btn:arrange(0, 0, 50, 50)
+    btn.state.pressed = true
+    btn:mousereleased(25, 25, 1, nil, btn)
+    check("image onClick 触发", clicked)
+
+    -- Avatar
+    local av = Avatar.new({ text = "lumi", size = 44 })
+    local aw, ah = av:measure(nil, nil)
+    eq("avatar 尺寸", aw == 44 and ah == 44, true)
+    check("avatar 文字回退取首字符", av:getFallbackText() == "l")
+    check("avatar 中文首字符", Avatar.new({ text = "张伟" }):getFallbackText() == "张")
+    av:arrange(0, 0, 44, 44)
+    av:draw()
+    check("avatar 绘制（文字回退）", true)
+    local avs = Avatar.new({ src = ph, size = 40, badge = 128 })
+    avs:arrange(0, 0, 40, 40)
+    avs:draw()
+    check("avatar 绘制（图片 + 角标）", true)
+
+    -- Icon
+    local ic = IconW.new({ name = "home", size = 30 })
+    local icw, ich = ic:measure(nil, nil)
+    eq("icon 尺寸", icw == 30 and ich == 30, true)
+    ic:arrange(0, 0, 30, 30)
+    ic:draw()
+    check("icon 绘制", true)
+    local unk = IconW.new({ name = "不存在的图标" })
+    unk:arrange(0, 0, 24, 24)
+    unk:draw()
+    check("icon 未知图标名安全", true)
+    -- 内置图标全部可绘制
+    local allOk = true
+    for name in pairs(IconW.icons) do
+        local ok = pcall(IconW.drawIcon, name, 0, 0, 24, { 1, 1, 1 })
+        if not ok then allOk = false end
+    end
+    check("icon 全部内置图标绘制无错", allOk)
+
+    -- Carousel
+    local changedTo
+    local car = Carousel.new({ images = { ph, ph, ph }, onChange = function(i) changedTo = i end })
+    car:arrange(0, 0, 300, 150)
+    eq("carousel 页数", car:pageCount(), 3)
+    car:next()
+    check("carousel next", car:getCurrent() == 2 and changedTo == 2)
+    car:next()
+    car:next()
+    check("carousel 循环回绕到第1页", car:getCurrent() == 1)
+    car:prev()
+    check("carousel prev 回绕到末页", car:getCurrent() == 3)
+    for _ = 1, 30 do lumi.animate.update(1 / 60) end
+    check("carousel 滑动动画到位", math.abs(car._pos - 3) < 0.01)
+    -- 箭头点击
+    car:mousepressed(car.x + 18, car.y + 75, 1, nil)
+    check("carousel 点击左箭头", car:getCurrent() == 2)
+    car:mousepressed(car.x + car.w - 18, car.y + 75, 1, nil)
+    check("carousel 点击右箭头", car:getCurrent() == 3)
+    -- 指示点点击
+    local dots = car:dotCenters()
+    car:mousepressed(dots[1], car.y + car.h - 10, 1, nil)
+    check("carousel 点击指示点跳转", car:getCurrent() == 1)
+    -- 自动播放（hover 暂停）
+    local car2 = Carousel.new({ images = { ph, ph }, auto = 0.5 })
+    car2:arrange(0, 0, 200, 100)
+    car2:onUpdate(0.3)
+    check("carousel 自动播放未到时不切换", car2:getCurrent() == 1)
+    car2:onUpdate(0.3)
+    check("carousel 自动播放切换", car2:getCurrent() == 2)
+    car2.state.hovered = true
+    car2:onUpdate(1.0)
+    check("carousel hover 暂停自动播放", car2:getCurrent() == 2)
+    -- 绘制冒烟（含圆角/空图片）
+    car:draw()
+    local round = Carousel.new({ images = { ph }, radius = "large" })
+    round:arrange(0, 0, 200, 100)
+    round:draw()
+    local empty = Carousel.new({})
+    empty:arrange(0, 0, 200, 100)
+    empty:draw()
+    check("carousel 圆角/空数据绘制", true)
+end
+
 -- ---------------- 布局 ----------------
 
 local function testLayout()
@@ -577,6 +708,7 @@ function M.run()
     testDialog()
     testScroll()
     testRating()
+    testImage()
     testLayout()
     testScene()
     testTheme()

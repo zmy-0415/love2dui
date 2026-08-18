@@ -77,6 +77,10 @@ function love.resize(w, h) ui:resize(w, h) end
 | tree | `ui:tree({...})` | 树 |
 | menu | `ui:menu({...})` | 菜单栏 |
 | divider | `ui:divider({...})` | 分隔线 |
+| image | `ui:image({...})` | 图片显示（fit 模式 / 圆角裁剪 / 染色 / 点击） |
+| avatar | `ui:avatar({...})` | 头像（圆形裁剪 / 文字回退 / 角标） |
+| icon | `ui:icon("home", {...})` | 矢量图标（30+ 内置，无需图片资源） |
+| carousel | `ui:carousel({...})` | 图片轮播（箭头 / 指示点 / 自动播放） |
 | dialog | `ui:dialog({...}, fn)` | 模态弹窗 |
 | toast | `ui:toast("消息")` | 轻提示 |
 | tooltip | `props.tooltip = "…"` | 悬停提示 |

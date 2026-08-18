@@ -202,6 +202,78 @@ function draw.text(str, x, y, w, opts)
     end
 end
 
+-- ---------------- 图片绘制 ----------------
+
+-- 计算 fit 布局：返回 dx, dy, dw, dh（绘制区域，相对 x/y 的偏移与尺寸）
+-- fit: contain（完整放入）/ cover（铺满裁剪，需配合裁剪使用）/ stretch（拉伸变形）/ center（原始尺寸居中）
+function draw.calcFit(iw, ih, w, h, fit)
+    fit = fit or "stretch"
+    if fit == "stretch" or fit == "fill" then
+        return 0, 0, w, h
+    elseif fit == "center" then
+        return (w - iw) / 2, (h - ih) / 2, iw, ih
+    end
+    local s
+    if fit == "cover" then
+        s = math.max(w / iw, h / ih)
+    else -- contain
+        s = math.min(w / iw, h / ih)
+    end
+    local dw, dh = iw * s, ih * s
+    return (w - dw) / 2, (h - dh) / 2, dw, dh
+end
+
+-- 绘制图片（自动 fit）。opts: fit / tint（{r,g,b[,a]} 染色）
+-- 注意 fit="cover" 时超出 w/h 的部分不会被裁剪，调用方需自行 clip
+function draw.image(img, x, y, w, h, opts)
+    if not img or w <= 0 or h <= 0 then return end
+    opts = opts or {}
+    local iw, ih = img:getDimensions()
+    if iw <= 0 or ih <= 0 then return end
+    local dx, dy, dw, dh = draw.calcFit(iw, ih, w, h, opts.fit)
+    love.graphics.setColor(opts.tint or { 1, 1, 1 })
+    if opts.fit == "stretch" or opts.fit == "fill" then
+        love.graphics.draw(img, x, y, 0, w / iw, h / ih)
+    elseif opts.fit == "center" then
+        love.graphics.draw(img, x + dx, y + dy)
+    else
+        love.graphics.draw(img, x + dx, y + dy, 0, dw / iw, dh / ih)
+    end
+end
+
+-- 在圆角矩形遮罩内绘制（fn 为绘制回调，基于 stencil 实现，兼容 LÖVE 11/12）
+function draw.inRound(x, y, w, h, r, fn)
+    draw.stencilMask(function()
+        love.graphics.polygon("fill", roundRectPoints(x, y, w, h, r))
+    end, fn)
+end
+
+-- 在圆形遮罩内绘制（fn 为绘制回调）
+function draw.inCircle(cx, cy, r, fn)
+    draw.stencilMask(function()
+        love.graphics.circle("fill", cx, cy, r)
+    end, fn)
+end
+
+-- 通用模板裁剪：maskFn 绘制遮罩形状（不可见），随后仅遮罩内可见地执行 fn
+function draw.stencilMask(maskFn, fn)
+    if love.graphics.setStencilMode then
+        -- LÖVE 12：状态式 API；draw 模式不屏蔽颜色写入，遮罩需以全透明色绘制
+        love.graphics.setStencilMode("draw", 1)
+        love.graphics.setColor(0, 0, 0, 0)
+        maskFn()
+        love.graphics.setStencilMode("test", 1)
+        fn()
+        love.graphics.setStencilMode()
+    else
+        -- LÖVE 11：回调式 API
+        love.graphics.stencil(maskFn, "replace", 1)
+        love.graphics.setStencilTest("greater", 0)
+        fn()
+        love.graphics.setStencilTest()
+    end
+end
+
 -- scissor 裁剪栈
 draw.scissors = {}
 

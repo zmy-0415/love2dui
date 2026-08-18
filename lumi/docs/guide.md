@@ -246,6 +246,10 @@ padding = { top = 8, right = 16, bottom = 8, left = 16 }
 | tree | `ui:tree({...})` | 叶子 | 树 |
 | menu | `ui:menu({...})` | 叶子 | 菜单栏 |
 | divider | `ui:divider({...})` | 叶子 | 分隔线 |
+| image | `ui:image({...})` | 叶子 | 图片显示（fit / 圆角 / 染色 / 点击） |
+| avatar | `ui:avatar({...})` | 叶子 | 头像（圆形裁剪 / 文字回退 / 角标） |
+| icon | `ui:icon("home", {...})` | 叶子 | 矢量图标（30+ 内置） |
+| carousel | `ui:carousel({...})` | 叶子 | 图片轮播（箭头 / 指示点 / 自动播放） |
 | dialog | `ui:dialog({...}, fn)` | 悬浮层 | 模态弹窗 |
 | toast | `ui:toast("消息")` | 悬浮层 | 轻提示 |
 | tooltip | `props.tooltip = "…"` | 悬浮层 | 悬停提示 |
@@ -673,6 +677,116 @@ ui:root({ direction = "column", gap = 12, w = 320 })
   :button("按钮")
   :divider()
 ```
+
+---
+
+### image —— 图片显示
+
+支持四种 fit 模式与圆角裁剪（stencil 实现），加载失败或未设置 `src` 时显示占位图标。
+
+| Prop | 类型 | 说明 |
+|---|---|---|
+| `src` | 路径字符串 / Image / Canvas / function | 图片源（函数源在构建时调用一次） |
+| `fit` | `"contain"/"cover"/"stretch"/"center"` | 填充模式（默认 `cover`） |
+| `radius` | number 或圆角名 | 圆角裁剪 |
+| `tint` | 色名或颜色表 | 染色 |
+| `bg` | 色名或颜色表 | 无图占位底色（默认 `surface2`） |
+| `onClick` | function | 点击回调（可点击时 hover 提亮） |
+
+`fit` 模式说明：`contain` 完整放入留白、`cover` 铺满裁剪、`stretch` 拉伸变形、`center` 原始尺寸居中。显式只设置 `w`（或 `h`）时，另一边按图片比例自动推导。
+
+```lua
+ui:root({ direction = "row", gap = 12 }, function(r)
+    r:image({ src = "assets/a.png", w = 200, h = 120, fit = "cover", radius = "medium" })
+    r:image({ src = "assets/b.png", w = 200, h = 120, fit = "contain", bg = "surface2" })
+end)
+```
+
+无图片资源时可用 `lumi.image.placeholder` 生成渐变占位图（Canvas，带缓存）：
+
+```lua
+local ph = lumi.image.placeholder("key", 480, 288, { 0.2, 0.4, 0.8 }, { 0.6, 0.2, 0.6 }, "水印文字")
+r:image({ src = ph, w = 480, h = 288 })
+```
+
+路径加载由 `lumi.image.load` 统一缓存，失败安全返回 nil（不抛错）。
+
+---
+
+### avatar —— 头像
+
+圆形裁剪显示图片；无图时以文字回退（取 `text` 首字符，按内容哈希自动选背景色）。
+
+| Prop | 类型 | 说明 |
+|---|---|---|
+| `src` | 图片源 | 头像图片（可选） |
+| `text` / `name` | string | 文字回退内容（取首字符） |
+| `size` | number | 直径（默认 40） |
+| `color` | 色名或颜色表 | 回退背景色（默认按文字哈希轮换） |
+| `textColor` | 色名或颜色表 | 回退文字色（默认 `onPrimary`） |
+| `badge` | `true` 或数字 | 角标：true 显示圆点，数字显示计数（99+ 封顶） |
+| `onClick` | function | 点击回调（hover 显示光环） |
+
+```lua
+ui:root({ direction = "row", gap = 10, align = "center" }, function(r)
+    r:avatar({ src = "a.png", size = 44 })
+    r:avatar({ text = "lumi", size = 44 })
+    r:avatar({ src = "a.png", size = 44, badge = 3 })
+    r:avatar({ text = "M", size = 44, badge = true })
+end)
+```
+
+---
+
+### icon —— 矢量图标
+
+首参为图标名。内置 30+ 线条风格图标（24×24 网格，随尺寸等比缩放），无需任何图片资源。
+
+| Prop | 类型 | 说明 |
+|---|---|---|
+| `name` | string | 图标名（也可作首参传入） |
+| `size` | number | 尺寸（默认 24） |
+| `color` | 色名或颜色表 | 颜色（默认 `text`） |
+
+内置图标：`home user settings search close check plus minus heart star trash edit play pause folder file image download upload refresh menu warning info mail lock calendar more arrow-left/right/up/down chevron-left/right/up/down`。未知图标名安全降级为占位方块。
+
+```lua
+ui:root({ direction = "row", gap = 12 }, function(r)
+    r:icon("home", { size = 26 })
+    r:icon("settings", { size = 26, color = "primary" })
+    r:icon("trash", { size = 26, color = "error" })
+end)
+```
+
+其他控件可复用静态绘制：`require("lumi.widgets.icon").drawIcon(name, x, y, size, color)`。
+
+---
+
+### carousel —— 图片轮播
+
+多张图片横向滑动切换，带补间动画、左右箭头与底部指示点（激活项为胶囊）。
+
+| Prop | 类型 | 说明 |
+|---|---|---|
+| `images` | 图片源数组 | 轮播内容 |
+| `w` / `h` | number | 尺寸（默认 320×180，建议显式指定或用 grow） |
+| `fit` | string | 填充模式（默认 `cover`） |
+| `auto` | number 或 `true` | 自动播放间隔秒数（true = 3s，默认不自动） |
+| `arrows` / `dots` | boolean | 显示箭头 / 指示点（默认 true） |
+| `radius` | number 或圆角名 | 圆角裁剪 |
+| `onChange` | function(index) | 切换回调 |
+
+悬停或按下时自动播放暂停；箭头与指示点均可点击。
+
+```lua
+ui:carousel({
+    images = { "a.png", "b.png", "c.png" },
+    h = 220, radius = "large", auto = 2.5,
+    onChange = function(i) print("第 " .. i .. " 张") end,
+})
+```
+
+方法：`:next()` / `:prev()` / `:go(i)` / `:getCurrent()`。
 
 ---
 

@@ -133,6 +133,46 @@ function love.load(args)
               end)
           end)
 
+          -- 图片组件
+          c:divider({ text = "图片组件 Image / Avatar / Icon / Carousel" })
+          local ph = lumi.image.placeholder
+          local ph1 = ph("demo1", 480, 288, { 0.16, 0.32, 0.72 }, { 0.42, 0.22, 0.68 }, "480×288")
+          local ph2 = ph("demo2", 480, 288, { 0.72, 0.36, 0.16 }, { 0.85, 0.62, 0.20 }, "Cover")
+          local ph3 = ph("demo3", 480, 288, { 0.13, 0.55, 0.42 }, { 0.36, 0.68, 0.30 }, "Contain")
+          local ph4 = ph("demo4", 480, 288, { 0.62, 0.18, 0.36 }, { 0.86, 0.40, 0.30 }, "Center")
+          c:box({ direction = "row", gap = 16 }, function(r)
+              r:image({ src = ph1, w = 220, h = 132, radius = "medium", onClick = function() feedback("点击图片") end })
+              r:box({ direction = "column", gap = 10 }, function(x)
+                  x:label("Avatar（无图时文字回退）", { variant = "caption", color = "muted" })
+                  x:box({ direction = "row", gap = 10, align = "center" }, function(a)
+                      a:avatar({ src = ph2, size = 44, onClick = function() feedback("点击头像") end })
+                      a:avatar({ text = "lumi", size = 44 })
+                      a:avatar({ text = "张伟", size = 44, color = "success" })
+                      a:avatar({ src = ph3, size = 44, badge = 3 })
+                      a:avatar({ text = "M", size = 44, badge = true })
+                      a:avatar({ text = "橙", size = 44, badge = 128 })
+                  end)
+                  x:box({ direction = "row", gap = 10, align = "center", wrap = true }, function(a)
+                      for _, name in ipairs({ "home", "user", "settings", "search", "close", "check", "heart", "star",
+                          "trash", "edit", "play", "pause", "folder", "file", "image", "download", "upload", "refresh",
+                          "menu", "warning", "info", "mail", "lock", "calendar", "more" }) do
+                          a:box({ direction = "column", gap = 4, align = "center", w = 56 }, function(ic)
+                              ic:icon(name, { size = 26, color = "text" })
+                              ic:label(name, { variant = "caption", color = "muted", align = "center" })
+                          end)
+                      end
+                  end)
+              end)
+          end)
+          c:box({ direction = "row", gap = 12, h = 120, align = "center" }, function(r)
+              r:image({ src = ph2, w = 160, h = 120, fit = "cover", radius = "small" })
+              r:image({ src = ph3, w = 160, h = 120, fit = "contain", bg = "surface2", radius = "small" })
+              r:image({ src = ph4, w = 160, h = 120, fit = "center", bg = "surface2", radius = "small" })
+              r:image({ src = "assets/不存在.png", w = 160, h = 120, radius = "small" }) -- 加载失败占位
+          end)
+          c:carousel({ images = { ph1, ph2, ph3, ph4 }, h = 220, radius = "large", auto = 2.5,
+              onChange = function(i) print("[carousel] 切换到第 " .. i .. " 张") end })
+
           -- 自定义控件
           c:divider({ text = "自定义控件 Custom Widget" })
           c:box({ direction = "row", gap = 16, align = "center" }, function(r)

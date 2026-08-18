@@ -20,6 +20,7 @@ end
 lumi.theme = require("lumi.theme")
 lumi.animate = require("lumi.animate")
 lumi.font = require("lumi.font")
+lumi.image = require("lumi.image")
 lumi.debug = require("lumi.debug")
 
 return lumi
