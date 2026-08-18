@@ -133,6 +133,59 @@ function love.load(args)
               end)
           end)
 
+          -- 布局增强
+          c:divider({ text = "布局增强 Grid / Absolute / 响应式" })
+          -- Grid 基础：3 列等分
+          c:box({ display = "grid", cols = 3, gap = 10 }, function(g)
+              for i = 1, 6 do
+                  g:box({ h = 52, bg = "surface2", radius = "medium", align = "center", justify = "center" }, function(b)
+                      b:label("G" .. i, { color = "muted" })
+                  end)
+              end
+          end)
+          -- Grid 跨行跨列
+          c:box({ display = "grid", cols = 3, gap = 10, h = 128 }, function(g)
+              g:box({ colSpan = 2, bg = "primary", radius = "medium", align = "center", justify = "center" }, function(b)
+                  b:label("colSpan = 2", { color = "onPrimary" })
+              end)
+              g:box({ rowSpan = 2, bg = "surface2", radius = "medium", align = "center", justify = "center" }, function(b)
+                  b:label("rowSpan = 2", { color = "muted" })
+              end)
+              g:box({ bg = "surface2", radius = "medium", align = "center", justify = "center" }, function(b)
+                  b:label("1×1", { color = "muted" })
+              end)
+              g:box({ bg = "surface2", radius = "medium", align = "center", justify = "center" }, function(b)
+                  b:label("1×1", { color = "muted" })
+              end)
+              g:box({ colSpan = 3, bg = "surface2", radius = "medium", align = "center", justify = "center" }, function(b)
+                  b:label("colSpan = 3", { color = "muted" })
+              end)
+          end)
+          -- 绝对定位：徽标与悬浮按钮（position + anchor）
+          c:box({ h = 104, bg = "surface2", radius = "medium", padding = 16, clipChildren = true, direction = "column", gap = 6 }, function(rel)
+              rel:label("绝对定位 position / anchor", { variant = "h3" })
+              rel:label("角标与悬浮按钮固定在容器四角，不占布局流", { color = "muted" })
+              rel:box({ position = { x = 10, y = 10, anchor = "top-right" }, bg = "error", radius = 999, padding = { x = 8, y = 2 } }, function(bdg)
+                  bdg:label("NEW", { variant = "caption", color = "onPrimary" })
+              end)
+              rel:box({ position = { x = 10, y = 10, anchor = "bottom-right" }, bg = "primary", radius = 999, w = 32, h = 32, align = "center", justify = "center" }, function(fb)
+                  fb:icon("close", { size = 16, color = "onPrimary" })
+              end)
+              rel:box({ position = { x = 10, y = 10, anchor = "bottom-left" }, bg = "success", radius = 999, w = 32, h = 32, align = "center", justify = "center" }, function(fb)
+                  fb:icon("check", { size = 16, color = "onPrimary" })
+              end)
+          end)
+          -- 响应式断点：拖动窗口宽度观察切换
+          c:box({ direction = "row", gap = 10 }, function(r)
+              r:box({ grow = 1, h = 44, bg = "primary", radius = "medium", align = "center", justify = "center", hideBelow = 700 }, function(b)
+                  b:label("宽窗口可见 hideBelow = 700", { color = "onPrimary" })
+              end)
+              r:box({ grow = 1, h = 44, bg = "success", radius = "medium", align = "center", justify = "center", hideAbove = 700 }, function(b)
+                  b:label("窄窗口可见 hideAbove = 700", { color = "onPrimary" })
+              end)
+          end)
+          c:label("拖动窗口宽度，观察上方色块切换（响应式断点）", { variant = "caption", color = "muted" })
+
           -- 图片组件
           c:divider({ text = "图片组件 Image / Avatar / Icon / Carousel" })
           local ph = lumi.image.placeholder
@@ -172,6 +225,48 @@ function love.load(args)
           end)
           c:carousel({ images = { ph1, ph2, ph3, ph4 }, h = 220, radius = "large", auto = 2.5,
               onChange = function(i) print("[carousel] 切换到第 " .. i .. " 张") end })
+
+          -- 性能
+          c:divider({ text = "性能 Performance（可视行虚拟化 / 裁剪剔除 / 子树缓存）" })
+          -- 2000 行表格：仅绘制可视区行
+          local bigRows = {}
+          for i = 1, 2000 do
+              bigRows[i] = { "条目 #" .. i, "虚拟化渲染——仅绘制可视行", i % 7 == 0 and "通过" or "待定" }
+          end
+          c:table({
+              h = 190,
+              columns = {
+                  { label = "名称", width = 150 },
+                  { label = "说明" },
+                  { label = "状态", width = 70 },
+              },
+              rows = bigRows,
+              onRowClick = function(i, row) feedback("第 " .. i .. " 行: " .. row[1]) end,
+          })
+          c:label("上表 2000 行数据，滚动流畅（F2 打开调试面板查看 FPS 与节点数）", { variant = "caption", color = "muted" })
+          -- 子树缓存：静态面板整棵渲染进 Canvas，每帧直接贴图
+          c:box({ direction = "row", gap = 12 }, function(row)
+              row:box({ cache = true, grow = 1, bg = "surface", radius = "medium", padding = 14, direction = "column", gap = 8, border = "border" }, function(p)
+                  p:label("静态面板 cache = true", { variant = "h3" })
+                  p:label("整棵子树渲染到 Canvas，每帧直接贴图。", { color = "muted" })
+                  p:box({ direction = "row", gap = 10 }, function(ic)
+                      ic:icon("heart", { size = 20, color = "primary" })
+                      ic:icon("star", { size = 20, color = "warning" })
+                      ic:icon("check", { size = 20, color = "success" })
+                      ic:icon("info", { size = 20, color = "muted" })
+                  end)
+              end)
+              row:box({ grow = 1, bg = "surface", radius = "medium", padding = 14, direction = "column", gap = 8, border = "border" }, function(p)
+                  p:label("动态面板（对照）", { variant = "h3" })
+                  p:label("每帧重绘全部内容；滚动出视口的节点被快速剔除。", { color = "muted" })
+                  p:box({ direction = "row", gap = 10 }, function(ic)
+                      ic:icon("play", { size = 20, color = "primary" })
+                      ic:icon("pause", { size = 20, color = "muted" })
+                      ic:icon("refresh", { size = 20, color = "success" })
+                      ic:icon("download", { size = 20, color = "warning" })
+                  end)
+              end)
+          end)
 
           -- 自定义控件
           c:divider({ text = "自定义控件 Custom Widget" })

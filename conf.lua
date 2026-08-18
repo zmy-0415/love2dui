@@ -8,5 +8,6 @@ function love.conf(t)
     t.window.resizable = true
     t.window.vsync = 1
     t.window.msaa = 4
-    t.window.highdpi = true
+    -- LÖVE 12 写法（t.highdpi）；LÖVE 11 为 t.window.highdpi
+    t.highdpi = true
 end

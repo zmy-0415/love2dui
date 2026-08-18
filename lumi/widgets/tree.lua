@@ -123,7 +123,11 @@ function Tree:draw()
     local f = font.get(theme.font.body)
 
     draw.pushClip(self.x, self.y, self.w, self.h)
-    for i, row in ipairs(rows) do
+    -- 可视行虚拟化：仅遍历视口内的行（每行等高 ROW_H，直接算区间）
+    local startIdx = math.max(1, math.floor(self.scrollY / ROW_H))
+    local endIdx = math.min(#rows, math.ceil((self.scrollY + self.h) / ROW_H) + 1)
+    for i = startIdx, endIdx do
+        local row = rows[i]
         local rowY = self.y + (i - 1) * ROW_H - self.scrollY
         if rowY + ROW_H >= self.y and rowY < self.y + self.h then
             local x = self.x + row.depth * INDENT + 8

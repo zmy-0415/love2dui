@@ -5,7 +5,8 @@
 ## ✨ 特性
 
 - **保留模式组件树** —— 声明式链式构建，布局 / 绘制 / 事件 / 焦点由框架统一管理
-- **Flexbox 布局** —— `direction` / `gap` / `align` / `justify` / `grow` / `wrap` / 百分比尺寸
+- **Flexbox + Grid 布局** —— `direction` / `gap` / `align` / `justify` / `grow` / `wrap` / 百分比尺寸；网格布局（`cols` / `colSpan` / `rowSpan`）、绝对定位（`position` / `anchor`）、响应式断点（`hideBelow` / `hideAbove`）
+- **性能优化** —— 子树 Canvas 缓存（`cache`）、scissor 裁剪快速剔除、表格/树可视行虚拟化（2000 行如 20 行）
 - **Material Design 3** —— 深 / 浅两套主题，圆角、阴影、状态过渡动画、点击波纹
 - **20+ 内置控件** —— 按钮、输入框、多行编辑器、下拉、表格、树、标签页、菜单、弹窗等
 - **多行编辑器** —— 行号、语法高亮、撤销/重做、查找/替换、横纵滚动

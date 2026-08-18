@@ -62,6 +62,7 @@ function Node:init() end
 -- 冒泡到根节点时标记场景布局脏，触发下一帧重排（避免每帧无条件全量重排）
 function Node:invalidate()
     self._measureCache = nil
+    self._cacheCv = nil
     if self.parent then
         self.parent:invalidate()
     elseif self._ctx then
@@ -72,6 +73,7 @@ end
 -- 清除整棵子树的测量缓存（主题/字号等全局样式变化后调用）
 function Node:clearMeasureCache()
     self._measureCache = nil
+    self._cacheCv = nil
     for _, c in ipairs(self.children) do
         c:clearMeasureCache()
     end
@@ -194,6 +196,10 @@ function Node:measure(availW, availH)
 end
 
 function Node:arrange(x, y, w, h)
+    -- 尺寸变化时使子树缓存失效
+    if self.props.cache and self._cacheCv and (w ~= self._cacheW or h ~= self._cacheH) then
+        self._cacheCv = nil
+    end
     self.x, self.y, self.w, self.h = x, y, w, h
     self:arrangeChildren()
 end
@@ -216,7 +222,18 @@ end
 function Node:onUpdate(dt) end
 
 function Node:draw()
-    if not self.visible then return end
+    if not self.visible or self._bpHidden then return end
+    -- 快速剔除：完全处于当前 scissor 裁剪区外时跳过整棵子树
+    if not draw.rectVisible(self.x, self.y, self.w, self.h) then return end
+    if self.props.cache then
+        self:drawCached()
+    else
+        self:renderTree()
+    end
+end
+
+-- 子树整体绘制（背景 + 内容 + 子节点）
+function Node:renderTree()
     self:drawBackground()
     self:drawContent()
     if self.acceptsChildren and #self.children > 0 then
@@ -230,6 +247,38 @@ function Node:draw()
             draw.popClip()
         end
     end
+end
+
+-- props.cache = true 时把整棵子树渲染到 Canvas，此后每帧直接贴图，直到 invalidate/尺寸变化。
+-- 适合静态内容（卡片/面板）；子树内 hover、波纹等实时效果会被冻结，动态内容勿用。
+function Node:drawCached()
+    local cv = self._cacheCv
+    if not cv then
+        local w = math.max(1, math.floor(self.w + 0.5))
+        local h = math.max(1, math.floor(self.h + 0.5))
+        cv = love.graphics.newCanvas(w, h)
+        love.graphics.push("all")
+        -- LÖVE 12：setCanvas 表参数请求临时 stencil 附件（子树内圆角/圆形裁剪需要）；LÖVE 11 渲染目标自带，降级为普通绑定
+        if not pcall(function()
+            love.graphics.setCanvas({ cv, stencil = true })
+        end) then
+            love.graphics.setCanvas(cv)
+        end
+        love.graphics.clear(0, 0, 0, 0)
+        love.graphics.setScissor() -- 清除继承自父级裁剪区的 scissor（其作用于渲染目标像素）
+        love.graphics.origin()
+        love.graphics.translate(-self.x, -self.y)
+        -- scissor 是目标像素坐标（不受 transform 影响），渲染期间叠加平移偏移修正
+        local ox, oy = draw.clipOffsetX, draw.clipOffsetY
+        draw.clipOffsetX, draw.clipOffsetY = ox - self.x, oy - self.y
+        self:renderTree()
+        draw.clipOffsetX, draw.clipOffsetY = ox, oy
+        love.graphics.pop()
+        self._cacheCv = cv
+        self._cacheW, self._cacheH = self.w, self.h
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(cv, self.x, self.y)
 end
 
 -- 通用背景绘制（bg/elevation/border 配置生效）
@@ -267,7 +316,7 @@ end
 
 -- 命中测试：返回最深命中的节点（z 高者优先）
 function Node:hitTest(x, y)
-    if not self.visible then return nil end
+    if not self.visible or self._bpHidden then return nil end
     if not self:contains(x, y) then return nil end
     if self.acceptsChildren then
         local order = self:getDrawOrder()

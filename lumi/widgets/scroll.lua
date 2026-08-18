@@ -92,7 +92,7 @@ function Scroll:wheelmoved(x, y, ctx)
 end
 
 function Scroll:hitTest(x, y)
-    if not self.visible or not self:contains(x, y) then return nil end
+    if not self.visible or self._bpHidden or not self:contains(x, y) then return nil end
     for i = #self.children, 1, -1 do
         local hit = self.children[i]:hitTest(x, y)
         if hit then return hit end

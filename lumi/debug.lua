@@ -34,6 +34,10 @@ end
 local function nodeLabel(node)
     if node.getCols then return "table" end
     if node._expanded then return "tree" end
+    if node.pageCount then return "carousel" end
+    if node.icons then return "icon" end
+    if node.getFallbackText then return "avatar" end
+    if node.getImage then return "image" end
     if node.isScroll then return "scroll" end
     if type(node._text) == "string" then return "input" end
     if node.ripples then return "button" end

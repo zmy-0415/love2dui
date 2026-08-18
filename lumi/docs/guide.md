@@ -223,6 +223,65 @@ padding = { x = 20, y = 10 }          -- 上下 10，左右 20
 padding = { top = 8, right = 16, bottom = 8, left = 16 }
 ```
 
+### Grid 网格布局
+
+容器设置 `display = "grid"` 后启用网格布局：子节点按 `cols` 列顺序填入单元格，支持跨行跨列。
+
+| Prop | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `display` | `"grid"` | — | 启用网格布局 |
+| `cols` | number | `1` | 列数 |
+| `gap` | number 或 `{x=,y=}` | `0` | 网格间距（x=列距，y=行距） |
+| `colGap` / `rowGap` | number | — | 单独覆盖列距/行距 |
+
+子节点 props：`colSpan`（跨列数）、`rowSpan`（跨行数）；格子内垂直对齐沿用 `align`/`alignSelf`（`stretch` 填满行高）。行高取该行内容最大需求高，跨行子节点不足时把差额均摊到跨度各行。
+
+```lua
+ui:root({ display = "grid", cols = 3, gap = 10 }, function(g)
+    g:box({ colSpan = 2, h = 64, bg = "primary" }, function() end)   -- 占 2 列
+    g:box({ rowSpan = 2, h = 120, bg = "surface2" }, function() end) -- 占 2 行
+    g:box({ h = 28, bg = "surface2" }, function() end)
+    g:box({ h = 28, bg = "surface2" }, function() end)
+end)
+```
+
+### 绝对定位
+
+子节点设置 `position` 后脱离布局流（不占 flex/grid 空间），相对父容器**内容区**定位。
+
+```lua
+position = {
+    x = 10,            -- 数字或百分比字符串（"10%"）
+    y = 10,
+    anchor = "top-right", -- top-left(默认)/top-right/bottom-left/bottom-right/center
+}
+```
+
+```lua
+ui:root({ h = 96, bg = "surface2", clipChildren = true, direction = "column" }, function(rel)
+    rel:label("卡片内容……")
+    -- 右上角徽标
+    rel:box({ position = { x = 8, y = 8, anchor = "top-right" }, bg = "error", radius = 999 }, function(b)
+        b:label("NEW", { variant = "caption", color = "onPrimary" })
+    end)
+    -- 右下角悬浮按钮
+    rel:box({ position = { x = 8, y = 8, anchor = "bottom-right" }, w = 32, h = 32, bg = "primary", radius = 999 })
+end)
+```
+
+尺寸未显式指定时取测量值；`w`/`h` 支持百分比。
+
+### 响应式显隐
+
+子节点按**容器内容宽**断点显示/隐藏（窗口 resize 后下一帧生效，隐藏节点不参与布局与命中测试）：
+
+```lua
+ui:root({ direction = "row" }, function(r)
+    r:box({ hideBelow = 700, ... }) -- 容器内容宽 < 700 时隐藏
+    r:box({ hideAbove = 700, ... }) -- 容器内容宽 > 700 时隐藏
+end)
+```
+
 ---
 
 ## 组件速查
@@ -971,6 +1030,34 @@ ui:root({ direction = "row" })
 - 内容变化需调用 `self:invalidate()` 使布局缓存失效。
 - 容器控件需设置 `self.acceptsChildren = true`。
 - 需要滚轮事件（并阻止冒泡到外层滚动容器）时设置 `self.isScroll = true`。
+
+---
+
+## 性能优化
+
+框架内置三项绘制优化，对使用者透明；重内容场景可显式开启子树缓存。
+
+### 子树 Canvas 缓存（props.cache）
+
+容器设置 `cache = true` 后，整棵子树（含背景与子控件）渲染到一张 Canvas，此后每帧直接贴图，直到缓存失效：
+
+```lua
+c:box({ cache = true, bg = "surface", radius = "medium", padding = 14 }, function(p)
+    p:label("静态面板", { variant = "h3" })
+    p:label("整棵子树只画一次……", { color = "muted" })
+end)
+```
+
+失效时机：`invalidate()`（内容变化）、节点尺寸变化、主题切换。
+注意：子树内的 hover 高亮、波纹、动画会被冻结在首帧——**仅用于静态内容**；子树内的圆角/圆形裁剪（stencil）在缓存渲染中同样受支持。
+
+### 绘制快速剔除
+
+每帧绘制时，与当前 scissor 裁剪区**完全不相交**的节点整棵跳过（`draw.rectVisible`）。滚动容器（scroll/table/tree）中滚出视口的内容不再产生绘制调用；更新与事件仍正常处理。
+
+### 可视行虚拟化
+
+table 与 tree 仅遍历并绘制视口内的行——2000 行表格的每帧成本与 20 行相同，滚动惯性、悬停、选中均不受影响。
 
 ---
 

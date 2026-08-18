@@ -277,7 +277,22 @@ end
 -- scissor 裁剪栈
 draw.scissors = {}
 
+-- scissor 坐标偏移（Canvas 缓存渲染时非零：世界坐标 → 缓存纹理局部坐标）
+draw.clipOffsetX = 0
+draw.clipOffsetY = 0
+
+-- 当前 scissor 栈顶矩形（即当前生效的裁剪区）内是否可见；无裁剪时恒可见
+function draw.rectVisible(x, y, w, h)
+    local top = draw.scissors[#draw.scissors]
+    if not top then return true end
+    local px, py, pw, ph = top[6], top[7], top[8], top[9]
+    if pw <= 0 or ph <= 0 then return false end -- 裁剪区为空，全部不可见
+    return x < px + pw and x + w > px and y < py + ph and y + h > py
+end
+
 function draw.pushClip(x, y, w, h)
+    x = x + draw.clipOffsetX
+    y = y + draw.clipOffsetY
     local px, py, pw, ph = love.graphics.getScissor()
     local has = (px ~= nil)
     local nx, ny, nw, nh
@@ -291,7 +306,8 @@ function draw.pushClip(x, y, w, h)
     else
         nx, ny, nw, nh = x, y, w, h
     end
-    table.insert(draw.scissors, { px, py, pw, ph, has })
+    -- 保存 push 前状态（1..5）与 push 后生效矩形（6..9，供 rectVisible 快速剔除）
+    table.insert(draw.scissors, { px, py, pw, ph, has, nx, ny, nw, nh })
     love.graphics.setScissor(nx, ny, nw, nh)
 end
 

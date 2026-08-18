@@ -499,6 +499,155 @@ local function testRating()
     check("rating 点击第1颗", rating.value == 1 and rv == 1)
 end
 
+-- ---------------- 布局增强：Grid / 绝对定位 / 响应式 ----------------
+
+local function testGridAbsolute()
+    -- Grid 基础：3 列 2 行等分
+    local g = Box.new({ display = "grid", cols = 3, gap = 0, w = 300 })
+    for _ = 1, 6 do g:addChild(Box.new({ h = 30 })) end
+    g:arrange(0, 0, 300, 60)
+    eq("grid 单元格宽", g.children[1].w, 100)
+    eq("grid 第2格 x", g.children[2].x, 100)
+    eq("grid 第2行 y", g.children[4].y, 30)
+    eq("grid 行高取内容高", g.children[1].h, 30)
+
+    -- Grid gap
+    local g2 = Box.new({ display = "grid", cols = 2, gap = 10, w = 210, h = 70 })
+    g2:addChild(Box.new({ h = 20 }))
+    g2:addChild(Box.new({ h = 20 }))
+    g2:arrange(0, 0, 210, 70)
+    eq("grid gap 单元格宽", g2.children[1].w, 100)
+    eq("grid gap 列偏移", g2.children[2].x, 110)
+
+    -- colSpan 占位避让
+    local g3 = Box.new({ display = "grid", cols = 3, gap = 0, w = 300 })
+    g3:addChild(Box.new({ colSpan = 2, h = 20 }))
+    g3:addChild(Box.new({ h = 20 }))
+    g3:addChild(Box.new({ h = 20 }))
+    g3:arrange(0, 0, 300, 100)
+    eq("grid colSpan 宽度", g3.children[1].w, 200)
+    eq("grid colSpan 避让", g3.children[2].x, 200)
+    check("grid colSpan 后续换行", g3.children[3].y > 0)
+
+    -- rowSpan 行高扩张
+    local g4 = Box.new({ display = "grid", cols = 2, gap = 0, w = 200 })
+    g4:addChild(Box.new({ rowSpan = 2, h = 60 }))
+    g4:addChild(Box.new({ h = 20 }))
+    g4:addChild(Box.new({ h = 20 }))
+    local _, mh4 = g4:measure(200, nil)
+    check("grid rowSpan 影响内容高", mh4 >= 60)
+    g4:arrange(0, 0, 200, math.ceil(mh4))
+    eq("grid rowSpan 跨行高度", g4.children[1].h, 60)
+    check("grid rowSpan 邻格在首行", g4.children[2].y == 0)
+    check("grid rowSpan 第2格下移", g4.children[3].y > 0)
+
+    -- 测量
+    local g5 = Box.new({ display = "grid", cols = 3, gap = 10 })
+    for _ = 1, 3 do g5:addChild(Box.new({ w = 50, h = 30 })) end
+    local w5, h5 = g5:measure(320, nil)
+    eq("grid 测量宽", w5, 320)
+    eq("grid 测量高", h5, 30)
+
+    -- 绝对定位
+    local a = Box.new({ direction = "column", w = 200, h = 100 })
+    a:addChild(Box.new({ h = 20 }))
+    a:addChild(Box.new({ position = { x = 10, y = 10 }, w = 40, h = 16 }))
+    a:arrange(0, 0, 200, 100)
+    check("absolute 定位", a.children[2].x == 10 and a.children[2].y == 10)
+    local a2 = Box.new({ w = 200, h = 100 })
+    a2:addChild(Box.new({ position = { x = 5, y = 5, anchor = "top-right" }, w = 40, h = 16 }))
+    a2:arrange(0, 0, 200, 100)
+    eq("absolute top-right", a2.children[1].x, 200 - 5 - 40)
+    local a3 = Box.new({ w = 200, h = 100 })
+    a3:addChild(Box.new({ position = { x = "10%", y = "20%" }, w = 40, h = 10 }))
+    a3:arrange(0, 0, 200, 100)
+    check("absolute 百分比", a3.children[1].x == 20 and a3.children[1].y == 20)
+    local a4 = Box.new({ w = 200, h = 100 })
+    a4:addChild(Box.new({ position = { x = 6, y = 6, anchor = "bottom-right" }, w = 30, h = 12 }))
+    a4:arrange(0, 0, 200, 100)
+    check("absolute bottom-right", a4.children[1].x == 200 - 6 - 30 and a4.children[1].y == 100 - 6 - 12)
+    -- 绝对定位不占布局流（无显式 h 的容器，内容高只算 flex 子节点）
+    local a5 = Box.new({ direction = "column", w = 200 })
+    a5:addChild(Box.new({ h = 20 }))
+    a5:addChild(Box.new({ position = { x = 10, y = 10 }, w = 40, h = 16 }))
+    local _, mah = a5:measure(nil, nil)
+    eq("absolute 不占 flex 空间", mah, 20)
+
+    -- 响应式断点
+    local r = Box.new({ direction = "row", w = 500, h = 40 })
+    r:addChild(Box.new({ grow = 1, h = 40, hideBelow = 600 }))
+    r:addChild(Box.new({ grow = 1, h = 40 }))
+    r:arrange(0, 0, 500, 40)
+    check("hideBelow 窄时隐藏", r.children[1]._bpHidden == true)
+    eq("hideBelow 隐藏不占空间", r.children[2].w, 500)
+    check("hideBelow 隐藏不响应命中", r.children[1]:hitTest(50, 20) == nil)
+    r:arrange(0, 0, 700, 40)
+    check("hideBelow 宽时显示", r.children[1]._bpHidden ~= true)
+    eq("hideBelow 显示后平分", r.children[1].w, 350)
+
+    local r2 = Box.new({ direction = "row", w = 800, h = 40 })
+    r2:addChild(Box.new({ grow = 1, h = 40, hideAbove = 700 }))
+    r2:arrange(0, 0, 800, 40)
+    check("hideAbove 宽时隐藏", r2.children[1]._bpHidden == true)
+end
+
+-- ---------------- 性能：剔除 / 子树缓存 / 虚拟化 ----------------
+
+local function testPerf()
+    -- rectVisible
+    check("rectVisible 无裁剪恒可见", draw.rectVisible(0, 0, 10, 10))
+    draw.pushClip(100, 100, 50, 50)
+    check("rectVisible 裁剪外不可见", not draw.rectVisible(0, 0, 10, 10))
+    check("rectVisible 相交可见", draw.rectVisible(90, 90, 20, 20))
+    check("rectVisible 内部可见", draw.rectVisible(110, 110, 10, 10))
+    draw.pushClip(200, 200, 50, 50) -- 交集为空
+    check("rectVisible 空交集不可见", not draw.rectVisible(0, 0, 9999, 9999))
+    draw.popClip()
+    draw.popClip()
+    check("rectVisible 出栈后恢复", draw.rectVisible(0, 0, 10, 10))
+
+    -- Canvas 子树缓存
+    local box = Box.new({ cache = true, w = 120, h = 80, bg = "surface", direction = "column", gap = 4 })
+    box:addChild(Label.new({ text = "缓存面板" }))
+    box:addChild(Label.new({ text = "第二行" }))
+    box:arrange(0, 0, 120, 80)
+    box:draw()
+    check("cache 首帧生成 Canvas", box._cacheCv ~= nil)
+    local cv = box._cacheCv
+    box:draw()
+    check("cache 次帧复用", box._cacheCv == cv)
+    box:invalidate()
+    check("cache invalidate 失效", box._cacheCv == nil)
+    box:draw()
+    box:arrange(0, 0, 150, 90)
+    check("cache 尺寸变化失效", box._cacheCv == nil)
+
+    -- 嵌套子树含圆角裁剪时缓存渲染不报错（clipOffset 修正路径）
+    local nested = Box.new({ cache = true, w = 100, h = 100, bg = "surface", radius = "medium", direction = "column" })
+    nested:addChild(Avatar.new({ text = "L", size = 40 }))
+    nested:arrange(0, 0, 100, 100)
+    nested:draw()
+    check("cache 含 stencil 子树渲染", nested._cacheCv ~= nil)
+
+    -- tree 可视行虚拟化：深滚动后绘制正确
+    local items = {}
+    for i = 1, 200 do items[i] = { label = "节点" .. i } end
+    local tr = Tree.new({ items = items })
+    tr:arrange(0, 0, 240, 160)
+    tr:setScroll(99999) -- 滚到底
+    tr:draw()
+    check("tree 虚拟化底部绘制", tr.scrollY > 0)
+
+    -- table 2000 行绘制冒烟（既有虚拟化）
+    local rows = {}
+    for i = 1, 2000 do rows[i] = { i, "x" } end
+    local tb = Table.new({ columns = { "A", "B" }, rows = rows })
+    tb:arrange(0, 0, 300, 150)
+    tb:setScroll(99999)
+    tb:draw()
+    check("table 2000 行虚拟化绘制", true)
+end
+
 -- ---------------- 图片组件 ----------------
 
 local function testImage()
@@ -708,6 +857,8 @@ function M.run()
     testDialog()
     testScroll()
     testRating()
+    testGridAbsolute()
+    testPerf()
     testImage()
     testLayout()
     testScene()
