@@ -82,6 +82,15 @@ function Slider:mousereleased(x, y, button, ctx, hit)
     self._dragging = false
 end
 
+-- 键盘：左右/上下方向键调整（step 优先，否则取范围的 5%）
+function Slider:keypressed(key, ctx)
+    if self.state.disabled then return end
+    if key ~= "left" and key ~= "right" and key ~= "up" and key ~= "down" then return end
+    local dir = (key == "left" or key == "down") and -1 or 1
+    local step = self.props.step or (self.max - self.min) / 20
+    self:setValue(self.value + dir * step)
+end
+
 function Slider:drawContent()
     local p = self.props
     local base = self:resolveColor(p.color or "primary")
@@ -109,6 +118,12 @@ function Slider:drawContent()
         local f = font.get(theme.font.caption)
         local text = tostring(self.value)
         draw.text(text, self.x + self.w - f:getWidth(text), self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("muted") })
+    end
+
+    -- 键盘焦点环
+    if self.state.focused then
+        local tx, tw = self:getTrackX()
+        draw.roundRectLine(tx - 6, self.y, tw + 12, self.h, self.h / 2, theme.alpha("primary", 0.5), 1.5)
     end
 end
 

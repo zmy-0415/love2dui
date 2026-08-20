@@ -10,6 +10,7 @@ local event = require("lumi.event")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
 local tooltip = require("lumi.widgets.tooltip")
+local Icon = require("lumi.widgets.icon")
 
 local Box = require("lumi.widgets.box")
 local Label = require("lumi.widgets.label")
@@ -179,6 +180,13 @@ end
 
 -- ---------------- 悬浮层 ----------------
 
+-- 进场动画：_ovT 从 0 补到 1（组件绘制时据此做 fade/scale/slide）
+local function overlayIn(node)
+    node._ovT = 0
+    node._ovAnim = true
+    animate.to(node, { _ovT = 1 }, { duration = 0.18, easing = "cubic" })
+end
+
 function Scene:openOverlay(node, opts)
     opts = opts or {}
     node._overlayOpts = opts
@@ -188,12 +196,37 @@ function Scene:openOverlay(node, opts)
     if node.w and node.h then
         node:arrange(node.x, node.y, node.w, node.h)
     end
+    if opts.anim ~= false then overlayIn(node) end
     return node
 end
 
+-- 关闭悬浮层：带动画节点先播退场（期间不参与命中），结束后真正移除
 function Scene:closeOverlay(node)
     for i, o in ipairs(self.overlays) do
         if o == node then
+            if node._ovAnim and not node._closing then
+                -- 立即解除模态拦截，退场动画只负责视觉
+                if self.modal == node then self.modal = nil end
+                if self.hover == node then
+                    node.state.hovered = false
+                    self.hover = nil
+                end
+                node._closing = true
+                animate.stop(node)
+                animate.to(node, { _ovT = 0 }, {
+                    duration = 0.14, easing = "quad",
+                    onDone = function()
+                        for j, x in ipairs(self.overlays) do
+                            if x == node then table.remove(self.overlays, j); break end
+                        end
+                        node._closing = nil
+                        if node._overlayOpts and node._overlayOpts.onClose then
+                            node._overlayOpts.onClose()
+                        end
+                    end,
+                })
+                return true
+            end
             table.remove(self.overlays, i)
             if self.modal == node then self.modal = nil end
             if node._overlayOpts and node._overlayOpts.onClose then
@@ -206,7 +239,7 @@ function Scene:closeOverlay(node)
 end
 
 function Scene:closeTopOverlay()
-    local top = self.overlays[#self.overlays]
+    local top = self:topOverlay()
     if top then
         self:closeOverlay(top)
         return true
@@ -220,6 +253,14 @@ function Scene:closeAllOverlays()
     end
 end
 
+-- 当前可交互的顶层悬浮层（跳过退场中的）
+function Scene:topOverlay()
+    for i = #self.overlays, 1, -1 do
+        if not self.overlays[i]._closing then return self.overlays[i] end
+    end
+    return nil
+end
+
 -- ---------------- 命中与焦点 ----------------
 
 function Scene:hitTest(x, y)
@@ -229,7 +270,7 @@ function Scene:hitTest(x, y)
     end
     for i = #self.overlays, 1, -1 do
         local o = self.overlays[i]
-        if o:contains(x, y) then return o:hitTest(x, y) end
+        if not o._closing and o:contains(x, y) then return o:hitTest(x, y) end
     end
     if self.root then return self.root:hitTest(x, y) end
     return nil
@@ -288,14 +329,16 @@ function Scene:mousepressed(x, y, button)
         end
         return
     end
-    if #self.overlays > 0 then
-        local top = self.overlays[#self.overlays]
-        if top:contains(x, y) then
-            self:_press(top:hitTest(x, y), x, y, button)
-        else
-            self:closeOverlay(top)
+    if not self.modal then
+        local top = self:topOverlay()
+        if top then
+            if top:contains(x, y) then
+                self:_press(top:hitTest(x, y), x, y, button)
+            else
+                self:closeOverlay(top)
+            end
+            return
         end
-        return
     end
     local hit = self.root and self.root:hitTest(x, y) or nil
     self:_press(hit, x, y, button)
@@ -305,11 +348,13 @@ function Scene:mousereleased(x, y, button)
     local hit
     if self.modal then
         if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
-    elseif #self.overlays > 0 then
-        local top = self.overlays[#self.overlays]
-        if top:contains(x, y) then hit = top:hitTest(x, y) end
     else
-        hit = self.root and self.root:hitTest(x, y) or nil
+        local top = self:topOverlay()
+        if top then
+            if top:contains(x, y) then hit = top:hitTest(x, y) end
+        else
+            hit = self.root and self.root:hitTest(x, y) or nil
+        end
     end
     local pressed = self.pressed
     if pressed then
@@ -324,11 +369,13 @@ function Scene:mousemoved(x, y)
     local hit
     if self.modal then
         if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
-    elseif #self.overlays > 0 then
-        local top = self.overlays[#self.overlays]
-        if top:contains(x, y) then hit = top:hitTest(x, y) end
     else
-        hit = self.root and self.root:hitTest(x, y) or nil
+        local top = self:topOverlay()
+        if top then
+            if top:contains(x, y) then hit = top:hitTest(x, y) end
+        else
+            hit = self.root and self.root:hitTest(x, y) or nil
+        end
     end
     if hit ~= self.hover then
         if self.hover then
@@ -356,11 +403,13 @@ function Scene:wheelmoved(x, y)
     local hit
     if self.modal then
         if self.modal:contains(self._mouseX, self._mouseY) then hit = self.modal:hitTest(self._mouseX, self._mouseY) end
-    elseif #self.overlays > 0 then
-        local top = self.overlays[#self.overlays]
-        if top:contains(self._mouseX, self._mouseY) then hit = top:hitTest(self._mouseX, self._mouseY) end
     else
-        hit = self.root and self.root:hitTest(self._mouseX, self._mouseY) or nil
+        local top = self:topOverlay()
+        if top then
+            if top:contains(self._mouseX, self._mouseY) then hit = top:hitTest(self._mouseX, self._mouseY) end
+        else
+            hit = self.root and self.root:hitTest(self._mouseX, self._mouseY) or nil
+        end
     end
     local n = hit
     while n do
@@ -424,8 +473,9 @@ function Scene:dialog(props, childrenFn)
     return d
 end
 
-function Scene:toast(msg)
-    table.insert(self.toasts, { text = msg, t = 0, dur = 2.5 })
+-- 轻提示：type = nil / "info" / "success" / "error"
+function Scene:toast(msg, type)
+    table.insert(self.toasts, { text = msg, t = 0, dur = 2.5, type = type })
     return self
 end
 
@@ -470,21 +520,38 @@ function Scene:update(dt)
     end
 end
 
+-- toast 类型 → 图标与色条
+local toastMeta = {
+    info = { icon = "info", color = "primary" },
+    success = { icon = "check", color = "success" },
+    error = { icon = "warning", color = "error" },
+}
+
 function Scene:drawToasts()
     local f = font.get(theme.font.body)
     local n = #self.toasts
     for i, t in ipairs(self.toasts) do
-        local fadeIn = math.min(1, t.t / 0.2)
-        local fadeOut = math.min(1, (t.dur - t.t) / 0.4)
-        local alpha = math.min(fadeIn, fadeOut)
+        -- 进场自下滑入，退场上滑淡出
+        local tIn = math.min(1, t.t / 0.25)
+        local tOut = math.min(1, (t.dur - t.t) / 0.4)
+        local alpha = math.min(tIn, tOut)
+        local yOff = (1 - tIn) * 24 - (1 - tOut) * 12
+        local meta = t.type and toastMeta[t.type] or nil
         local text = t.text
         local tw = f:getWidth(text)
-        local bw = tw + 32
+        local iconW = meta and 26 or 0
+        local bw = tw + 32 + iconW
         local bh = 40
         local bx = (self.width - bw) / 2
-        local by = self.height - 90 - (n - i) * (bh + 10)
-        draw.roundRect(bx, by, bw, bh, 20, { 0.10, 0.10, 0.10, 0.92 * alpha })
-        draw.text(text, bx + 16, by + (bh - f:getHeight()) / 2, 0, { font = f, color = { 1, 1, 1, alpha } })
+        local by = self.height - 90 - (n - i) * (bh + 10) + yOff
+        draw.roundRect(bx, by, bw, bh, 20, { 0.10, 0.10, 0.12, 0.92 * alpha })
+        if meta then
+            -- 左侧色条 + 状态图标
+            draw.roundRect(bx + 6, by + 8, 4, bh - 16, 2, theme.alpha(meta.color, alpha))
+            Icon.drawIcon(meta.icon, bx + 16, by + (bh - 18) / 2, 18, theme.alpha(meta.color, alpha))
+        end
+        draw.text(text, bx + 16 + iconW, by + (bh - f:getHeight()) / 2, 0,
+            { font = f, color = { 1, 1, 1, alpha } })
     end
 end
 

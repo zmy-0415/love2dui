@@ -7,7 +7,8 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
-local Box = require("lumi.widgets.box")
+local animate = require("lumi.animate")
+local Overlay = require("lumi.widgets.overlay")
 local Button = require("lumi.widgets.button")
 local Scroll = require("lumi.widgets.scroll")
 
@@ -19,6 +20,7 @@ function Dropdown.new(props)
     setmetatable(self, Dropdown)
     self.value = props.value
     self._list = nil
+    self._arrowT = 0 -- 箭头旋转进度：0 向下（收起）/ 1 向上（展开）
     return self
 end
 
@@ -57,6 +59,16 @@ function Dropdown:mousepressed(x, y, button, ctx)
     self:toggle(ctx)
 end
 
+function Dropdown:onUpdate(dt)
+    -- 箭头旋转跟随展开状态（按目标值判断，避免补间中途反复重启）
+    local target = self._list and 1 or 0
+    if (self._arrowTarget or 0) ~= target then
+        self._arrowTarget = target
+        animate.stop(self, "_arrowT")
+        animate.to(self, { _arrowT = target }, { duration = theme.motion.fast, easing = "cubic" })
+    end
+end
+
 function Dropdown:toggle(ctx)
     if self._list then
         ctx:closeOverlay(self._list)
@@ -66,7 +78,7 @@ function Dropdown:toggle(ctx)
     local items = self:getItems()
     -- 左右 padding 设为 0，使选项宽度与下拉框宽度一致、文字起始位置对齐；
     -- 上下保留 4 让列表项不贴圆角边缘
-    local list = Box.new({ bg = "surface", elevation = 3, radius = theme.shape.medium, padding = { x = 0, y = 4 }, direction = "column" })
+    local list = Overlay.new({ bg = "surface", elevation = 3, radius = theme.shape.medium, padding = { x = 0, y = 4 }, direction = "column" })
     list.acceptsChildren = true
 
     local content = list
@@ -126,13 +138,17 @@ function Dropdown:drawContent()
     local label = self:getLabel()
     draw.text(label, self.x + 12, self.y + (self.h - f:getHeight()) / 2, self.w - 36, { font = f, color = theme.color("text"), ellipsis = true })
 
-    -- 箭头
+    -- 箭头（展开时旋转 180°）
     local ax = self.x + self.w - 18
     local ay = self.y + self.h / 2
+    love.graphics.push()
+    love.graphics.translate(ax, ay)
+    love.graphics.rotate((self._arrowT or 0) * math.pi)
     love.graphics.setColor(theme.color("muted"))
     love.graphics.setLineWidth(2)
-    love.graphics.line(ax - 4, ay - 2, ax, ay + 2)
-    love.graphics.line(ax, ay + 2, ax + 4, ay - 2)
+    love.graphics.line(-4, -2, 0, 2)
+    love.graphics.line(0, 2, 4, -2)
+    love.graphics.pop()
 end
 
 return Dropdown

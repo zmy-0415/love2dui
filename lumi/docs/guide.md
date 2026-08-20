@@ -537,6 +537,8 @@ end)
 
 方法：`setValue(v)`。
 
+交互：鼠标拖拽即时更新；Tab 聚焦后可用方向键（←/→ 或 ↑/↓）调整，带焦点环指示。步进优先用 `step`，未设置时取范围的 5%。
+
 ```lua
 ui:root({ direction = "column", gap = 16, w = 320 }, function(c)
     c:slider({ min = 0, max = 100, value = 60, showValue = true, onChanged = function(v) print(v) end })
@@ -580,6 +582,8 @@ end)
 | `placeholder` | string | 无匹配时的占位 |
 | `w` / `height` | number | 尺寸 |
 | `onChanged` | function(value) | 选择回调 |
+
+展开时列表自锚点缩放滑入（Material 菜单风格），箭头 180° 旋转补间；点击外部或选中后自动收起。
 
 ```lua
 ui:dropdown({
@@ -835,7 +839,7 @@ end)
 | `radius` | number 或圆角名 | 圆角裁剪 |
 | `onChange` | function(index) | 切换回调 |
 
-悬停或按下时自动播放暂停；箭头与指示点均可点击。
+交互：可直接**拖拽切页**——按住图片左右拖动实时跟随，位移超过阈值（约 1/5 页宽）松手即切换，否则回弹；首尾页有边界阻尼，最多拖出 1/3 页。悬停或按下时自动播放暂停；箭头与指示点均可点击。
 
 ```lua
 ui:carousel({
@@ -851,13 +855,14 @@ ui:carousel({
 
 ### dialog —— 模态弹窗
 
-通过 `ui:dialog(props, childrenFn)` 创建，自动居中并带遮罩。
+通过 `ui:dialog(props, childrenFn)` 创建，自动居中并带遮罩。进场遮罩淡入 + 面板中心缩放（0.94 → 1），退场反向；ESC / 点击遮罩 / 关闭按钮均可关闭。
 
 | Prop | 类型 | 说明 |
 |---|---|---|
 | `title` | string | 标题（可选） |
 | `w` | number | 宽度（默认 420） |
 | `dismissible` | boolean | 点击遮罩是否关闭（默认 true） |
+| `closable` | boolean | 右上角显示关闭按钮（悬停有高亮反馈） |
 
 ```lua
 ui:dialog({ title = "关于 LumiUI" }, function(p)
@@ -874,8 +879,13 @@ end)
 ### toast —— 轻提示
 
 ```lua
-ui:toast("这是一条 Toast 通知")   -- 2.5 秒后自动消失
+ui:toast("这是一条 Toast 通知")            -- 默认样式，2.5 秒后自动消失
+ui:toast("已保存", "success")             -- 左侧绿色色条 + 对勾图标
+ui:toast("网络连接失败", "error")          -- 红色色条 + 警告图标
+ui:toast("提示内容", "info")               -- 主题色条 + 信息图标
 ```
+
+多条 Toast 自底部向上堆叠；进场自下滑入，退场上滑淡出。
 
 ### tooltip —— 悬停提示
 

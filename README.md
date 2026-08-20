@@ -8,6 +8,7 @@
 - **Flexbox + Grid 布局** —— `direction` / `gap` / `align` / `justify` / `grow` / `wrap` / 百分比尺寸；网格布局（`cols` / `colSpan` / `rowSpan`）、绝对定位（`position` / `anchor`）、响应式断点（`hideBelow` / `hideAbove`）
 - **性能优化** —— 子树 Canvas 缓存（`cache`）、scissor 裁剪快速剔除、表格/树可视行虚拟化（2000 行如 20 行）
 - **Material Design 3** —— 深 / 浅两套主题，圆角、阴影、状态过渡动画、点击波纹
+- **交互与动效** —— 悬浮层统一进出场动画（缩放 + 滑入）、弹窗遮罩淡入 + 面板缩放、下拉箭头旋转补间、轮播拖拽切页（边界阻尼回弹）、滑块键盘方向键、Toast 类型图标 + 滑入滑出
 - **20+ 内置控件** —— 按钮、输入框、多行编辑器、下拉、表格、树、标签页、菜单、弹窗等
 - **多行编辑器** —— 行号、语法高亮、撤销/重做、查找/替换、横纵滚动
 - **中文友好** —— 自动探测系统中文字体，完整支持 UTF-8 光标、选区与 IME 组合输入
@@ -71,9 +72,9 @@ function love.resize(w, h) ui:resize(w, h) end
 | checkbox | `ui:checkbox({...})` | 复选框 |
 | switch | `ui:switch({...})` | 开关 |
 | radio | `ui:radio({...})` | 单选按钮 |
-| slider | `ui:slider({...})` | 滑块 |
+| slider | `ui:slider({...})` | 滑块（拖拽 / 键盘方向键 / 焦点环） |
 | progress | `ui:progress({...})` | 进度条 |
-| dropdown | `ui:dropdown({...})` | 下拉选择 |
+| dropdown | `ui:dropdown({...})` | 下拉选择（列表滑入动画 + 箭头旋转） |
 | table | `ui:table({...})` | 表格 |
 | tree | `ui:tree({...})` | 树 |
 | menu | `ui:menu({...})` | 菜单栏 |
@@ -81,9 +82,9 @@ function love.resize(w, h) ui:resize(w, h) end
 | image | `ui:image({...})` | 图片显示（fit 模式 / 圆角裁剪 / 染色 / 点击） |
 | avatar | `ui:avatar({...})` | 头像（圆形裁剪 / 文字回退 / 角标） |
 | icon | `ui:icon("home", {...})` | 矢量图标（30+ 内置，无需图片资源） |
-| carousel | `ui:carousel({...})` | 图片轮播（箭头 / 指示点 / 自动播放） |
-| dialog | `ui:dialog({...}, fn)` | 模态弹窗 |
-| toast | `ui:toast("消息")` | 轻提示 |
+| carousel | `ui:carousel({...})` | 图片轮播（箭头 / 指示点 / 自动播放 / 拖拽切页） |
+| dialog | `ui:dialog({...}, fn)` | 模态弹窗（进出场动画 / closable 关闭按钮） |
+| toast | `ui:toast("消息", "type")` | 轻提示（info / success / error 类型样式） |
 | tooltip | `props.tooltip = "…"` | 悬停提示 |
 
 ## 📚 文档
@@ -117,7 +118,7 @@ function love.resize(w, h) ui:resize(w, h) end
 
 ## 🧪 测试
 
-无头自检覆盖全部控件与核心能力（布局 / 主题 / 事件 / 中文输入）：
+无头自检覆盖全部控件与核心能力（布局 / 主题 / 事件 / 中文输入 / 交互与动画）：
 
 ```bash
 # 方式一：创建 verify.flag 后运行（自动退出，返回退出码）
@@ -128,7 +129,7 @@ love .          # 或控制台版 lovec .
 LUMI_VERIFY=1 love .
 ```
 
-输出形如 `[TEST] 104 total, 104 passed, 0 failed`，退出码 `0` 表示全部通过。
+输出形如 `[TEST] 133 total, 133 passed, 0 failed`，退出码 `0` 表示全部通过。
 
 ## 🎨 主题与动画
 

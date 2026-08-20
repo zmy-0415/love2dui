@@ -82,10 +82,11 @@ function animate.to(target, props, opts)
     return tw
 end
 
--- 停止某个目标上的所有动画
-function animate.stop(target)
+-- 停止某个目标上的动画；key 可选，仅停止补间到该属性的动画
+function animate.stop(target, key)
     for i = #active, 1, -1 do
-        if active[i].target == target then
+        local tw = active[i]
+        if tw.target == target and (key == nil or tw.props[key] ~= nil) then
             table.remove(active, i)
         end
     end

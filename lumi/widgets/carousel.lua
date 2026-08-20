@@ -40,11 +40,17 @@ function Carousel:go(i, silent)
     if i == self._page then return end
     self._page = i
     self._timer = 0
-    animate.stop(self)
+    animate.stop(self, "_pos")
     animate.to(self, { _pos = i }, { duration = theme.motion.normal, easing = "cubic" })
     if silent ~= true then
         self:emit("onChange", i)
     end
+end
+
+-- 对齐到当前页（拖拽回弹）
+function Carousel:snapBack()
+    animate.stop(self, "_pos")
+    animate.to(self, { _pos = self._page }, { duration = theme.motion.normal, easing = "cubic" })
 end
 
 function Carousel:next() self:go(self._page + 1) end
@@ -108,6 +114,42 @@ function Carousel:mousepressed(x, y, button, ctx)
                 return
             end
         end
+    end
+    -- 其余区域：启动拖拽
+    self._dragging = true
+    self._dragX = x
+    self._dragStartPos = self._pos
+    self._dragDX = 0
+    animate.stop(self, "_pos")
+end
+
+-- 拖拽跟随（边界施加阻尼，最多拖出 1/3 页）
+function Carousel:mousemoved(x, y, ctx)
+    if not self._dragging then return end
+    local n = self:pageCount()
+    local dx = x - self._dragX
+    self._dragDX = dx
+    local p = self._dragStartPos - dx / self.w
+    if p < 1 then
+        p = 1 - math.min(0.34, (1 - p) * 0.35)
+    elseif p > n then
+        p = n + math.min(0.34, (p - n) * 0.35)
+    end
+    self._pos = p
+end
+
+-- 释放：位移超阈值且未越界则切页，否则回弹（拖拽不循环回绕）
+function Carousel:mousereleased(x, y, button, ctx, hit)
+    if not self._dragging then return end
+    self._dragging = false
+    local n = self:pageCount()
+    local th = math.max(24, self.w * 0.18)
+    if self._dragDX <= -th and self._page < n then
+        self:go(self._page + 1)
+    elseif self._dragDX >= th and self._page > 1 then
+        self:go(self._page - 1)
+    else
+        self:snapBack()
     end
 end
 

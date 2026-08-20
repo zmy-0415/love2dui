@@ -829,6 +829,120 @@ local function testScene()
     check("点击空白失焦", ui.focus == nil)
 end
 
+-- ---------------- 交互性 / 动画 ----------------
+
+local function testInteractivity()
+    -- Overlay 进出场动画（真实 Scene 驱动）
+    local ui = lumi.new()
+    ui:root({})
+    local closed = false
+    local node = Box.new({ w = 100, h = 50 })
+    ui:openOverlay(node, { onClose = function() closed = true end })
+    check("overlay 进场起始 _ovT = 0", node._ovT == 0 and node._ovAnim == true)
+    for _ = 1, 20 do lumi.animate.update(1 / 60) end
+    eq("overlay 进场动画到位", node._ovT, 1)
+    ui:closeOverlay(node)
+    check("overlay 退场动画期间保留", #ui.overlays == 1 and node._closing == true)
+    check("overlay 退场起始回调未触发", not closed)
+    for _ = 1, 20 do lumi.animate.update(1 / 60) end
+    check("overlay 退场动画后移除", #ui.overlays == 0)
+    check("overlay onClose 触发", closed)
+    -- anim = false 直接开/关，无动画
+    local plain = Box.new({ w = 10, h = 10 })
+    ui:openOverlay(plain, { anim = false })
+    check("overlay anim=false 无进场动画", plain._ovAnim == nil)
+    ui:closeOverlay(plain)
+    check("overlay anim=false 立即移除", #ui.overlays == 0)
+
+    -- Dialog 关闭按钮热区
+    local dctx = fakeCtx()
+    local dlg = Dialog.new({ title = "t", closable = true })
+    dlg:arrange(100, 100, 300, 200)
+    dctx.openOverlay(dlg)
+    local cx, cy, cw, ch = dlg:closeRect()
+    check("dialog closable 热区有效", cx ~= nil and cx >= 100 and cy >= 100)
+    dlg:mousepressed(cx + cw / 2, cy + ch / 2, 1, dctx)
+    check("dialog 点击关闭按钮", #dctx.overlays == 0)
+    local dlg2 = Dialog.new({ title = "t" })
+    dlg2:arrange(0, 0, 300, 200)
+    check("dialog 非 closable 无热区", dlg2:closeRect() == nil)
+
+    -- Dropdown 箭头旋转补间：展开 → 1，收起 → 0
+    local dctx2 = fakeCtx()
+    local dd = Dropdown.new({ items = { "a", "b" }, value = "a" })
+    dd:arrange(0, 0, 150, 40)
+    dd:mousepressed(10, 10, 1, dctx2)
+    dd:onUpdate(1 / 60)
+    for _ = 1, 20 do lumi.animate.update(1 / 60) end
+    eq("dropdown 展开箭头转向 1", dd._arrowT, 1)
+    dd:toggle(dctx2)
+    dd:onUpdate(1 / 60)
+    for _ = 1, 20 do lumi.animate.update(1 / 60) end
+    eq("dropdown 收起箭头回到 0", dd._arrowT, 0)
+
+    -- Carousel 拖拽切页 / 回弹 / 边界阻尼
+    local ph = res.placeholder("drag", 64, 40)
+    local car = Carousel.new({ images = { ph, ph, ph } })
+    car:arrange(0, 0, 300, 150)
+    -- 向左拖 → 露出下一页
+    car:mousepressed(150, 75, 1, nil)
+    check("carousel 按下进入拖拽", car._dragging == true)
+    car:mousemoved(90, 75, nil)
+    check("carousel 拖拽跟随（向左拖露出下一页）", car._pos > 1)
+    car:mousereleased(90, 75, 1, nil)
+    check("carousel 左拖超阈值切下一页", car:getCurrent() == 2)
+    for _ = 1, 30 do lumi.animate.update(1 / 60) end
+    check("carousel 切页滑动到位", math.abs(car._pos - 2) < 0.01)
+    -- 位移不足回弹
+    car:mousepressed(150, 75, 1, nil)
+    car:mousemoved(160, 75, nil)
+    car:mousereleased(160, 75, 1, nil)
+    check("carousel 小位移回弹不切页", car:getCurrent() == 2)
+    for _ = 1, 30 do lumi.animate.update(1 / 60) end
+    -- 向右拖 → 回上一页
+    car:mousepressed(150, 75, 1, nil)
+    car:mousemoved(240, 75, nil)
+    check("carousel 向右拖露出上一页", car._pos < 2)
+    car:mousereleased(240, 75, 1, nil)
+    check("carousel 右拖超阈值切上一页", car:getCurrent() == 1)
+    for _ = 1, 30 do lumi.animate.update(1 / 60) end
+    -- 边界阻尼：首页继续向右拖最多让出 0.34 页
+    car:mousepressed(150, 75, 1, nil)
+    car:mousemoved(600, 75, nil)
+    check("carousel 边界阻尼限制越界", car._pos >= 0.65 and car._pos <= 1)
+    car:mousereleased(600, 75, 1, nil)
+    for _ = 1, 30 do lumi.animate.update(1 / 60) end
+
+    -- Slider 键盘调整与 clamp
+    local sl = Slider.new({ min = 0, max = 100, value = 50 })
+    sl:keypressed("right", nil)
+    eq("slider 右键 + 5%", sl.value, 55)
+    sl:keypressed("up", nil)
+    eq("slider 上键等效右键", sl.value, 60)
+    sl:keypressed("left", nil)
+    eq("slider 左键 - 5%", sl.value, 55)
+    local s0 = Slider.new({ min = 0, max = 100, value = 2 })
+    s0:keypressed("left", nil)
+    s0:keypressed("left", nil)
+    eq("slider 下限 clamp 到 0", s0.value, 0)
+    local s100 = Slider.new({ min = 0, max = 100, value = 98 })
+    s100:keypressed("right", nil)
+    s100:keypressed("right", nil)
+    eq("slider 上限 clamp 到 100", s100.value, 100)
+
+    -- Toast 类型
+    local tui = lumi.new()
+    tui:root({})
+    tui:toast("默认")
+    tui:toast("成功", "success")
+    tui:toast("错误", "error")
+    tui:toast("信息", "info")
+    check("toast 入队数量", #tui.toasts == 4)
+    eq("toast 类型记录", tui.toasts[2].type, "success")
+    tui:update(3.0)
+    check("toast 超时自动移除", #tui.toasts == 0)
+end
+
 -- ---------------- 主题 ----------------
 
 local function testTheme()
@@ -862,6 +976,7 @@ function M.run()
     testImage()
     testLayout()
     testScene()
+    testInteractivity()
     testTheme()
 
     print(string.format("[TEST] %d total, %d passed, %d failed", passed + failed, passed, failed))

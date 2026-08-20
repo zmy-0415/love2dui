@@ -11,7 +11,7 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
-local Box = require("lumi.widgets.box")
+local Overlay = require("lumi.widgets.overlay")
 local Button = require("lumi.widgets.button")
 local Divider = require("lumi.widgets.divider")
 
@@ -56,7 +56,7 @@ end
 
 function Menu:buildPanel(items, ctx)
     local f = font.get(theme.font.body)
-    local panel = Box.new({ bg = "surface", elevation = 3, radius = theme.shape.medium, padding = 4, direction = "column" })
+    local panel = Overlay.new({ bg = "surface", elevation = 3, radius = theme.shape.medium, padding = 4, direction = "column" })
     panel.acceptsChildren = true
     local maxW = 120
     for _, it in ipairs(items or {}) do
@@ -96,7 +96,13 @@ function Menu:openTop(i, ctx)
     self._panel = panel
     ctx:openOverlay(panel, {
         closeOnOutside = true,
-        onClose = function() self._open = nil; self._panel = nil end,
+        onClose = function()
+            -- 退场动画结束后才回调：若期间已切到新面板，勿误清
+            if self._panel == panel then
+                self._open = nil
+                self._panel = nil
+            end
+        end,
     })
 end
 
