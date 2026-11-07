@@ -26,6 +26,14 @@ function Tree.new(props)
     self.selected = nil
     self._expanded = setmetatable({}, { __mode = "k" })
     self._flattenCache = nil
+    self._flattenItems = nil
+    return self
+end
+
+-- 外部替换数据源：清空缓存并触发重排/重绘
+function Tree:setItems(items)
+    self.props.items = items
+    self:invalidateFlatten()
     return self
 end
 
@@ -44,16 +52,31 @@ function Tree:flatten()
     return rows
 end
 
--- 带缓存的可见行列表（展开/折叠时失效）
+-- 带缓存的可见行列表（展开/折叠或数据源被替换时失效）
+-- 除展开状态外还校验 props.items 的身份：直接赋值新表（如 tree.props.items = newItems）
+-- 时旧缓存会继续渲染已经不存在的行，必须在这里兜底。
 function Tree:getRows()
-    if not self._flattenCache then
+    local items = self.props.items
+    local rebuilt = false
+    if not self._flattenCache or self._flattenItems ~= items then
         self._flattenCache = self:flatten()
+        self._flattenItems = items
+        rebuilt = true
+    end
+    if rebuilt then
+        -- 行数变化会改变内容高度，需同步滚动范围，否则滚动条与可滚区仍是旧值
+        if self.viewH and self.viewH > 0 then
+            self.contentH = #self._flattenCache * ROW_H
+            self:clampScroll()
+        end
+        self:invalidate()
     end
     return self._flattenCache
 end
 
 function Tree:invalidateFlatten()
     self._flattenCache = nil
+    self._flattenItems = nil
     self:invalidate()
 end
 

@@ -156,6 +156,24 @@ function draw.utf8Len(s)
     return n
 end
 
+-- 把任意字节位置对齐到合法字符边界（超过串长返回串长）
+-- 用于外部设置的光标/偏移：直接 clamp 字节数可能落进多字节字符内部，绘制与删除都会错位
+function draw.utf8Align(s, i)
+    local n = #s
+    if not i or i <= 0 then return 0 end
+    if i > n then return n end
+    -- 若该位置正好是续字节（10xxxxxx），向前回退到字符起始字节
+    while i > 0 do
+        local b = s:byte(i + 1)
+        if b and b >= 0x80 and b < 0xC0 then
+            i = i - 1
+        else
+            break
+        end
+    end
+    return i
+end
+
 -- 单行文本（可选省略号截断，按字符边界二分避免截断多字节字符）
 function draw.truncate(font, text, maxWidth)
     if font:getWidth(text) <= maxWidth then return text end

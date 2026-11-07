@@ -76,8 +76,9 @@ end
 -- 所有文本修改（插入/退格/删除/粘贴/剪切/回车）都汇聚于此，
 -- 后续撤销/重做只需在此前后记录快照入命令栈。
 function Editor:_replace(a, b, newText)
-    a = math.max(0, math.min(#self._text, a))
-    b = math.max(a, math.min(#self._text, b))
+    -- 对齐到字符边界：外部传入的偏移若落在多字节字符内部，会导致文本被截断成非法 UTF-8
+    a = draw.utf8Align(self._text, a)
+    b = math.max(a, draw.utf8Align(self._text, b))
     -- 记录撤销快照（所有文本修改统一走此入口，为撤销/重做提供命令栈）
     self._undoStack[#self._undoStack + 1] = self:snapshot()
     if #self._undoStack > 500 then table.remove(self._undoStack, 1) end
@@ -312,32 +313,52 @@ function Editor:replace(replacement)
     return true
 end
 
--- 替换全部匹配，返回替换数量
+-- 替换全部匹配，返回替换数量。
+-- 先收集匹配再一次性重建文本：避免边替换边查找的偏移漂移，
+-- 也让「无匹配」成为真正的空操作（不写撤销栈、不清重做栈）。
 function Editor:replaceAll(text, replacement)
     if not text or #text == 0 then return 0 end
+    local matches = self:findAll(text)
+    if #matches == 0 then return 0 end
+
+    replacement = replacement or ""
+    local repLen = #replacement
     self._undoStack[#self._undoStack + 1] = self:snapshot()
     if #self._undoStack > 500 then table.remove(self._undoStack, 1) end
     self._redoStack = {}
-    local n = 0
-    local offset = 0
-    while true do
-        local s = self._text:find(text, offset + 1, true)
-        if not s then break end
-        local a, b = s - 1, s - 1 + #text
-        self._text = self._text:sub(1, a) .. (replacement or "") .. self._text:sub(b + 1)
-        offset = a + #(replacement or "")
-        n = n + 1
+
+    local cursor = self.cursor
+    local newCursor = nil
+    local delta = 0
+    local parts = {}
+    local prev = 0
+    for _, m in ipairs(matches) do
+        parts[#parts + 1] = self._text:sub(prev + 1, m.from)
+        parts[#parts + 1] = replacement
+        prev = m.to
+        -- 光标映射：在匹配之前 → 累加前面的长度差；落在匹配内部 → 移到替换文本末尾
+        if newCursor == nil then
+            if cursor <= m.from then
+                newCursor = cursor + delta
+            elseif cursor < m.to then
+                newCursor = m.from + delta + repLen
+            end
+        end
+        delta = delta + repLen - (m.to - m.from)
     end
-    if n > 0 then
-        self.cursor = math.min(self.cursor, #self._text)
-        self._selAnchor = nil
-        self._prefCol = nil
-        self._linesDirty = true
-        self:invalidate()
-        self:emit("onChange", self._text)
-        self:setFindText(self._findText)
-    end
-    return n
+    parts[#parts + 1] = self._text:sub(prev + 1)
+
+    self._text = table.concat(parts)
+    -- 旧光标可能落在被替换/被删除的区间上，必须对齐字符边界后再使用
+    self.cursor = draw.utf8Align(self._text, newCursor or (cursor + delta))
+    self._selAnchor = nil
+    self._prefCol = nil
+    self._linesDirty = true
+    self:invalidate()
+    self:emit("onChange", self._text)
+    self:setFindText(self._findText)
+
+    return #matches
 end
 
 -- 撤销/重做扩展的接口：快照与恢复

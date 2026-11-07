@@ -91,11 +91,16 @@ function Scroll:wheelmoved(x, y, ctx)
     self.velocity = self.velocity + y * -100
 end
 
+-- 命中顺序必须与 draw 一致：按 z 序从高到低，否则重叠子节点会「看到 A 却点到 B」
 function Scroll:hitTest(x, y)
     if not self.visible or self._bpHidden or not self:contains(x, y) then return nil end
-    for i = #self.children, 1, -1 do
-        local hit = self.children[i]:hitTest(x, y)
-        if hit then return hit end
+    local order = self:getDrawOrder()
+    for i = #order, 1, -1 do
+        local c = order[i]
+        if self:isChildActive(c) then
+            local hit = c:hitTest(x, y)
+            if hit then return hit end
+        end
     end
     return self
 end

@@ -139,7 +139,7 @@ love .          # 或控制台版 lovec .
 LUMI_VERIFY=1 love .
 ```
 
-输出形如 `[TEST] 133 total, 133 passed, 0 failed`，退出码 `0` 表示全部通过。
+输出形如 `[TEST] 227 total, 227 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，某组抛异常只记一条失败，不会中断其余用例。
 
 ## 🎨 主题与动画
 

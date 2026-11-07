@@ -57,6 +57,17 @@ local function eq(desc, actual, expected)
     end
 end
 
+-- 绘制冒烟：真正的断言是「不抛异常」，而不是恒真的 check(..., true)
+local function draws(desc, fn)
+    local ok, err = pcall(fn)
+    if ok then
+        passed = passed + 1
+    else
+        failed = failed + 1
+        failures[#failures + 1] = desc .. " 抛出异常: " .. tostring(err)
+    end
+end
+
 -- 供下拉/菜单使用的伪场景
 local function fakeCtx()
     local overlays = {}
@@ -185,8 +196,29 @@ local function testInput()
     pi.state.focused = true
     pi._imeText = "n"
     pi:arrange(0, 0, 200, 40)
-    pi:draw()
-    check("input 密码框掩码绘制", true)
+    draws("input 密码框掩码绘制", function() pi:draw() end)
+
+    -- 密码框点击定位：掩码串的字节偏移需换算成字符数，不能直接当字符数用
+    local pf = font.get(theme.font.body)
+    local maskW = pf:getWidth("•")
+    local pcur = Input.new({ password = true })
+    pcur:setText("abcd")
+    pcur:arrange(0, 0, 200, 40)
+    pcur:setCursorFromX(pcur.x + 12 + maskW * 1.8)
+    eq("input 密码框点击定位到字符边界", pcur.cursor, 2)
+    pcur:setText("你好世界")
+    pcur:setCursorFromX(pcur.x + 12 + maskW * 1.8)
+    eq("input 密码框中文点击定位", pcur.cursor, 6)
+
+    -- 长文本横向滚动：光标始终在可视区内
+    local lng = Input.new({ text = string.rep("M", 80) })
+    lng:arrange(0, 0, 100, 40)
+    lng.state.focused = true
+    draws("input 长文本绘制", function() lng:draw() end)
+    check("input 长文本横向滚动跟随光标", (lng._scrollX or 0) > 0)
+    lng:keypressed("home", nil)
+    draws("input 回到开头重绘", function() lng:draw() end)
+    check("input 光标回到开头后滚动归零", (lng._scrollX or 0) == 0)
 
     -- 带 label 的输入框：正文绘制字体应为 body，label 的 caption 字体不应泄漏
     local li = Input.new({ label = "标签", text = "你好" })
@@ -275,19 +307,38 @@ local function testEditor()
     eq("editor find 起始", fs, 6)
     eq("editor find 结束", fe, 11)
 
+    -- 全部替换：数量、光标映射到字符边界、无匹配时不污染撤销栈
+    local ra = Editor.new({})
+    ra:setText("你好你好")
+    ra.cursor = 4 -- 落在第一个匹配内部的第二个汉字上
+    eq("editor replaceAll 替换数量", ra:replaceAll("你好", "hi"), 2)
+    eq("editor replaceAll 文本", ra:getText(), "hihi")
+    eq("editor replaceAll 光标映射", ra.cursor, 2)
+    local undoBefore = #ra._undoStack
+    eq("editor replaceAll 无匹配返回 0", ra:replaceAll("不存在", "x"), 0)
+    eq("editor replaceAll 无匹配不写撤销栈", #ra._undoStack, undoBefore)
+    eq("editor replaceAll 无匹配不改文本", ra:getText(), "hihi")
+
+    -- 删除型替换后光标必须仍落在合法字符边界
+    local rd = Editor.new({})
+    rd:setText("你好你好")
+    rd.cursor = #rd._text
+    rd:replaceAll("好", "")
+    eq("editor replaceAll 删除后文本", rd:getText(), "你你")
+    check("editor replaceAll 删除后光标合法",
+        rd.cursor <= #rd._text and draw.utf8Align(rd._text, rd.cursor) == rd.cursor)
+
     -- 渲染冒烟（聚焦/选区/行号）
     e:setText("第一行\n第二行\n第三行")
     e.state.focused = true
     e._selAnchor = 0
     e.cursor = #e._text
     e:arrange(0, 0, 200, 60)
-    e:draw()
-    check("editor 绘制（选区）", true)
+    draws("editor 绘制（选区）", function() e:draw() end)
     local ln = Editor.new({ text = "1\n2\n3", lineNumbers = true })
     ln.state.focused = true
     ln:arrange(0, 0, 200, 80)
-    ln:draw()
-    check("editor 绘制（行号）", true)
+    draws("editor 绘制（行号）", function() ln:draw() end)
 
     -- 滚动条拖动
     local sc = Editor.new({ text = ("长行内容\n"):rep(30) })
@@ -454,6 +505,14 @@ local function testTree()
     check("tree 点击展开", tr._expanded[items[1]] == true)
     check("tree onSelect", selected == items[1])
     check("tree 展开后行数增加", #tr:getRows() == 2)
+
+    -- 外部替换数据源：行缓存与内容高度都要跟着变
+    tr:setItems({ { label = "a" }, { label = "b" }, { label = "c" } })
+    eq("tree setItems 后行数", #tr:getRows(), 3)
+    eq("tree setItems 后内容高度", tr.contentH, 3 * 32)
+    tr.props.items = { { label = "only" } }
+    eq("tree 直接改 props.items 行缓存失效", #tr:getRows(), 1)
+    eq("tree 直接改 props.items 内容高度同步", tr.contentH, 32)
 end
 
 local function testMenu()
@@ -488,6 +547,16 @@ local function testScroll()
     sc:wheelmoved(0, -5, nil)
     sc:onUpdate(0.1)
     check("scroll 滚轮滚动", sc.scrollY > 0)
+
+    -- 命中顺序与绘制一致：z 更高的子节点即使后加入也应优先命中
+    local zs = Scroll.new({ direction = "column" })
+    local top = Box.new({ w = 100, h = 100, z = 5 })
+    local bottom = Box.new({ w = 100, h = 100, z = 0 })
+    zs:addChild(top)    -- 先加入但 z 更高 → 绘制在上层
+    zs:addChild(bottom)
+    zs:arrange(0, 0, 200, 200)
+    top.x, top.y, bottom.x, bottom.y = 0, 0, 0, 0
+    check("scroll 命中遵循 z 序", zs:hitTest(10, 10) == top)
 end
 
 local function testRating()
@@ -644,8 +713,7 @@ local function testPerf()
     local tb = Table.new({ columns = { "A", "B" }, rows = rows })
     tb:arrange(0, 0, 300, 150)
     tb:setScroll(99999)
-    tb:draw()
-    check("table 2000 行虚拟化绘制", true)
+    draws("table 2000 行虚拟化绘制", function() tb:draw() end)
 end
 
 -- ---------------- 图片组件 ----------------
@@ -681,13 +749,11 @@ local function testImage()
     local fb = Image.new({ w = 80, h = 60 })
     fb:measure(nil, nil)
     fb:arrange(0, 0, 80, 60)
-    fb:draw()
-    check("image 无图占位绘制", true)
+    draws("image 无图占位绘制", function() fb:draw() end)
     -- 圆角 + cover 绘制冒烟（stencil 路径）
     img:arrange(0, 0, 128, 80)
     img.props.radius = "medium"
-    img:draw()
-    check("image 圆角绘制", true)
+    draws("image 圆角绘制", function() img:draw() end)
     -- 点击回调
     local clicked = false
     local btn = Image.new({ src = ph, w = 50, h = 50, onClick = function() clicked = true end })
@@ -703,24 +769,20 @@ local function testImage()
     check("avatar 文字回退取首字符", av:getFallbackText() == "l")
     check("avatar 中文首字符", Avatar.new({ text = "张伟" }):getFallbackText() == "张")
     av:arrange(0, 0, 44, 44)
-    av:draw()
-    check("avatar 绘制（文字回退）", true)
+    draws("avatar 绘制（文字回退）", function() av:draw() end)
     local avs = Avatar.new({ src = ph, size = 40, badge = 128 })
     avs:arrange(0, 0, 40, 40)
-    avs:draw()
-    check("avatar 绘制（图片 + 角标）", true)
+    draws("avatar 绘制（图片 + 角标）", function() avs:draw() end)
 
     -- Icon
     local ic = IconW.new({ name = "home", size = 30 })
     local icw, ich = ic:measure(nil, nil)
     eq("icon 尺寸", icw == 30 and ich == 30, true)
     ic:arrange(0, 0, 30, 30)
-    ic:draw()
-    check("icon 绘制", true)
+    draws("icon 绘制", function() ic:draw() end)
     local unk = IconW.new({ name = "不存在的图标" })
     unk:arrange(0, 0, 24, 24)
-    unk:draw()
-    check("icon 未知图标名安全", true)
+    draws("icon 未知图标名安全", function() unk:draw() end)
     -- 内置图标全部可绘制
     local allOk = true
     for name in pairs(IconW.icons) do
@@ -763,14 +825,15 @@ local function testImage()
     car2:onUpdate(1.0)
     check("carousel hover 暂停自动播放", car2:getCurrent() == 2)
     -- 绘制冒烟（含圆角/空图片）
-    car:draw()
+    draws("carousel 绘制", function() car:draw() end)
     local round = Carousel.new({ images = { ph }, radius = "large" })
     round:arrange(0, 0, 200, 100)
-    round:draw()
     local empty = Carousel.new({})
     empty:arrange(0, 0, 200, 100)
-    empty:draw()
-    check("carousel 圆角/空数据绘制", true)
+    draws("carousel 圆角/空数据绘制", function()
+        round:draw()
+        empty:draw()
+    end)
 end
 
 -- ---------------- 布局 ----------------
@@ -956,28 +1019,41 @@ end
 function M.run()
     passed, failed, failures = 0, 0, {}
 
-    testBasic()
-    testButton()
-    testAnimate()
-    testInput()
-    testEditor()
-    testSelection()
-    testSlider()
-    testDropdown()
-    testTabs()
-    testTable()
-    testTree()
-    testMenu()
-    testDialog()
-    testScroll()
-    testRating()
-    testGridAbsolute()
-    testPerf()
-    testImage()
-    testLayout()
-    testScene()
-    testInteractivity()
-    testTheme()
+    -- 每组独立执行：某组抛异常只记一条失败，不会中断后续所有用例
+    local groups = {
+        { "基础控件", testBasic },
+        { "按钮", testButton },
+        { "动画", testAnimate },
+        { "输入框", testInput },
+        { "编辑器", testEditor },
+        { "选区", testSelection },
+        { "滑块", testSlider },
+        { "下拉", testDropdown },
+        { "标签页", testTabs },
+        { "表格", testTable },
+        { "树", testTree },
+        { "菜单", testMenu },
+        { "对话框", testDialog },
+        { "滚动区", testScroll },
+        { "评分", testRating },
+        { "Grid/绝对定位", testGridAbsolute },
+        { "性能", testPerf },
+        { "图片", testImage },
+        { "布局", testLayout },
+        { "场景", testScene },
+        { "交互", testInteractivity },
+        { "主题", testTheme },
+    }
+    for _, g in ipairs(groups) do
+        local ok, err = xpcall(g[2], function(e)
+            if debug and debug.traceback then return debug.traceback(tostring(e), 2) end
+            return tostring(e)
+        end)
+        if not ok then
+            failed = failed + 1
+            failures[#failures + 1] = string.format("[%s] 异常中断: %s", g[1], tostring(err))
+        end
+    end
 
     print(string.format("[TEST] %d total, %d passed, %d failed", passed + failed, passed, failed))
     for _, f in ipairs(failures) do

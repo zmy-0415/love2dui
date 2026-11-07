@@ -11,6 +11,10 @@ local draw = require("lumi.draw")
 local Input = setmetatable({}, { __index = Widget })
 Input.__index = Input
 
+local PAD_X = 12
+local MASK = "•"        -- 掩码字符（多字节，宽度按字符计）
+local MASK_BYTES = #MASK
+
 local function isShift()
     return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
 end
@@ -26,6 +30,7 @@ function Input.new(props)
     self.cursor = #self._text
     self._imeText = nil
     self._selAnchor = nil
+    self._scrollX = 0
     return self
 end
 
@@ -59,6 +64,7 @@ function Input:setText(text)
     self._text = text or ""
     self.cursor = #self._text
     self._selAnchor = nil
+    self._scrollX = 0
     self:invalidate()
     self:emit("onChange", self._text)
 end
@@ -106,14 +112,27 @@ function Input:paste()
     end
 end
 
--- 将「前 n 个字符」换算为字节下标
+-- 将「前 n 个字符」换算为字节下标（n 超过串长时返回串尾）
 function Input:charToByte(n)
     local i = 0
     for _ = 1, n do
-        i = draw.utf8Next(self._text, i)
-        if not i then break end
+        local nxt = draw.utf8Next(self._text, i)
+        if not nxt then break end   -- 不能把 i 覆盖成 nil，否则光标会变成 nil
+        i = nxt
     end
     return i
+end
+
+-- 显示用文本与光标在「显示串」中的字节位置。
+-- 密码框显示等宽掩码：每个原文字符对应一个掩码字符（3 字节），
+-- 两者字节偏移不同，所有绘制/命中都必须走这里换算，否则会截断多字节字符或跳位。
+function Input:displayInfo()
+    if self.props.password then
+        local chars = draw.utf8Len(self._text)
+        local before = draw.utf8Len(self._text:sub(1, draw.utf8Align(self._text, self.cursor)))
+        return string.rep(MASK, chars), before * MASK_BYTES
+    end
+    return self._text, self.cursor
 end
 
 function Input:getLabelHeight()
@@ -129,10 +148,9 @@ end
 -- 按 x 坐标定位光标（沿字符边界遍历）
 function Input:setCursorFromX(x)
     local f = font.get(theme.font.body)
-    local padX = 12
     local masked = self.props.password and true or false
-    local display = masked and string.rep("•", draw.utf8Len(self._text)) or self._text
-    local tx = x - (self.x + padX)
+    local display = (self:displayInfo())
+    local tx = x - (self.x + PAD_X) + (self._scrollX or 0)
     local best, bestDist = 0, math.huge
     local i = 0
     while true do
@@ -142,9 +160,10 @@ function Input:setCursorFromX(x)
         if not i then break end
     end
     if masked then
-        self.cursor = self:charToByte(best)
+        -- best 是掩码串的字节偏移，要先换算成字符数，再映射回原文字节位置
+        self.cursor = self:charToByte(draw.utf8Len(display:sub(1, best)))
     else
-        self.cursor = best
+        self.cursor = draw.utf8Align(self._text, best)
     end
 end
 
@@ -271,17 +290,24 @@ function Input:drawContent()
     draw.roundRectLine(fx, fy, fw, fh, radius, borderColor, borderW)
 
     local f = font.get(theme.font.body)
-    local display = self._text
-    local cursorByte = self.cursor
-    if p.password then
-        display = string.rep("•", draw.utf8Len(self._text))
-        -- 掩码字符是多字节的，需把「光标前字符数」换算为 display 的字节位置，
-        -- 否则 display:sub(1, cursorByte) 会截断多字节字符导致解码错误
-        cursorByte = draw.utf8Len(self._text:sub(1, self.cursor)) * #"•"
-    end
+    local display, cursorByte = self:displayInfo()
     local imeText = self._imeText
-    local padX = 12
     local textY = fy + (fh - f:getHeight()) / 2
+    local innerW = fw - PAD_X * 2
+
+    -- 横向滚动：文本超出可视宽度时平移内容，保证光标（含 IME 组合串）始终可见
+    local caretPx = f:getWidth(display:sub(1, cursorByte)) + (imeText and f:getWidth(imeText) or 0)
+    local scrollX = self._scrollX or 0
+    local edge = 2
+    if caretPx - scrollX > innerW - edge then
+        scrollX = caretPx - innerW + edge
+    elseif caretPx - scrollX < 0 then
+        scrollX = caretPx
+    end
+    local maxScrollX = math.max(0, f:getWidth(display) + edge * 2 - innerW)
+    scrollX = math.max(0, math.min(maxScrollX, scrollX))
+    self._scrollX = scrollX
+    local textX = fx + PAD_X - scrollX
 
     -- 选区（仅非密码、聚焦时显示）
     local selA, selB
@@ -289,23 +315,23 @@ function Input:drawContent()
         selA, selB = self:selectionRange()
     end
 
-    draw.pushClip(fx + padX, fy, fw - padX * 2, fh)
+    draw.pushClip(fx + PAD_X, fy, innerW, fh)
     if selA and selB and selB > selA then
         local preW = f:getWidth(display:sub(1, selA))
         local selW = f:getWidth(display:sub(selA + 1, selB))
         love.graphics.setColor(theme.alpha("primary", 0.28))
-        love.graphics.rectangle("fill", fx + padX + preW, textY, selW, f:getHeight())
+        love.graphics.rectangle("fill", textX + preW, textY, selW, f:getHeight())
     end
     if #display == 0 and not imeText and p.placeholder then
-        draw.text(p.placeholder, fx + padX, textY, 0, { font = f, color = theme.color("muted") })
+        draw.text(p.placeholder, textX, textY, 0, { font = f, color = theme.color("muted") })
     else
-        self:drawTextField(f, display, cursorByte, imeText, fx + padX, textY, theme.color("text"))
+        self:drawTextField(f, display, cursorByte, imeText, textX, textY, theme.color("text"))
     end
 
     if self.state.focused and not self.state.disabled and not self:hasSelection() then
         if (love.timer.getTime() % 1) < 0.55 then
             local cursorText = display:sub(1, cursorByte) .. (imeText or "")
-            local cursorX = fx + padX + f:getWidth(cursorText)
+            local cursorX = textX + f:getWidth(cursorText)
             love.graphics.setColor(theme.color("primary"))
             love.graphics.rectangle("fill", cursorX, textY, 1.5, f:getHeight())
         end
