@@ -4,6 +4,8 @@
     用法：local res = require("lumi.image"); res.load("assets/a.png")
 ]]
 
+local draw = require("lumi.draw")
+
 local res = {}
 
 local cache = {}
@@ -62,7 +64,7 @@ function res.placeholder(key, w, h, from, to, label)
     for x = 0, w - 1 do
         for y = 0, h - 1, 4 do
             local t = (x + y) / math.max(1, diag)
-            love.graphics.setColor(
+            draw.setColor(
                 from[1] + (to[1] - from[1]) * t,
                 from[2] + (to[2] - from[2]) * t,
                 from[3] + (to[3] - from[3]) * t,
@@ -71,16 +73,17 @@ function res.placeholder(key, w, h, from, to, label)
         end
     end
     -- 装饰圆（低透明度，增加层次）
-    love.graphics.setColor(1, 1, 1, 0.10)
+    draw.setColor(1, 1, 1, 0.10)
     love.graphics.circle("fill", w * 0.72, h * 0.32, math.min(w, h) * 0.28)
-    love.graphics.setColor(0, 0, 0, 0.10)
+    draw.setColor(0, 0, 0, 0.10)
     love.graphics.circle("fill", w * 0.25, h * 0.78, math.min(w, h) * 0.22)
     if label then
-        love.graphics.setColor(1, 1, 1, 0.85)
+        draw.setColor(1, 1, 1, 0.85)
         love.graphics.print(label, 10, 8)
     end
     love.graphics.setCanvas()
     love.graphics.pop()
+    draw.resetState()   -- pop 恢复了渲染状态，缓存作废
 
     phCache[key] = cv
     return cv

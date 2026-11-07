@@ -110,14 +110,14 @@ function Slider:drawContent()
     local thumbR = THUMB / 2
     if self.state.hovered or self._dragging then thumbR = thumbR + 1.5 end
     draw.shadow(thumbX - thumbR, cy - thumbR, thumbR * 2, thumbR * 2, thumbR, self._dragging and 2 or 1)
-    love.graphics.setColor(theme.color("surface"))
+    draw.setColor(theme.color("surface"))
     love.graphics.circle("fill", thumbX, cy, thumbR)
 
     -- 数值
     if p.showValue then
         local f = font.get(theme.font.caption)
         local text = tostring(self.value)
-        draw.text(text, self.x + self.w - f:getWidth(text), self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("muted") })
+        draw.text(text, self.x + self.w - draw.textWidth(f, text), self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("muted") })
     end
 
     -- 键盘焦点环

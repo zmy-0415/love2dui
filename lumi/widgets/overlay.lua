@@ -6,6 +6,7 @@
 ]]
 
 local Box = require("lumi.widgets.box")
+local draw = require("lumi.draw")
 
 local Overlay = setmetatable({}, { __index = Box })
 Overlay.__index = Overlay
@@ -29,6 +30,7 @@ function Overlay:draw()
         love.graphics.translate(-self.x, -(self.y + oy))
         Box.draw(self)
         love.graphics.pop()
+        draw.resetState()   -- pop 恢复渲染状态，缓存作废
     else
         Box.draw(self)
     end

@@ -102,7 +102,7 @@ function Editor:rebuildLines()
     while true do
         local n = text:find("\n", pos + 1, true)
         local lineEnd = n and (n - 1) or #text
-        local w = f:getWidth(text:sub(pos + 1, lineEnd))
+        local w = draw.textWidth(f, text:sub(pos + 1, lineEnd))
         if w > maxW then maxW = w end
         if not n then break end
         starts[#starts + 1] = n
@@ -421,7 +421,7 @@ function Editor:gutterW()
     local digits = 1
     while n >= 10 do n = math.floor(n / 10); digits = digits + 1 end
     local cf = font.get(theme.font.caption)
-    return 10 + digits * cf:getWidth("0") + 10
+    return 10 + digits * draw.textWidth(cf, "0") + 10
 end
 
 function Editor:viewWidth()
@@ -528,7 +528,7 @@ function Editor:scrollToOffset(offset)
     elseif rowTop + lh > self.scrollY + viewH then
         self.scrollY = rowTop + lh - viewH
     end
-    local x = f:getWidth(self._text:sub(self:lineStart(row) + 1, offset))
+    local x = draw.textWidth(f, self._text:sub(self:lineStart(row) + 1, offset))
     local viewW = self:viewWidth()
     if x < self.scrollX then
         self.scrollX = x
@@ -788,7 +788,7 @@ function Editor:colFromX(lineText, tx)
     local best, bestDist = 0, math.huge
     local i = 0
     while true do
-        local d = math.abs(f:getWidth(lineText:sub(1, i)) - tx)
+        local d = math.abs(draw.textWidth(f, lineText:sub(1, i)) - tx)
         if d < bestDist then bestDist = d; best = i end
         i = draw.utf8Next(lineText, i)
         if not i then break end
@@ -800,7 +800,7 @@ end
 
 -- 单行渲染（语法高亮扩展点：可覆写本方法；默认支持 props.highlight 回调分段着色）
 function Editor:renderLine(fontObj, lineText, lineIdx, x, y, color)
-    love.graphics.setFont(fontObj)
+    draw.setFont(fontObj)
     local hl = self.props.highlight
     if hl then
         local segs = hl(lineText, lineIdx)
@@ -809,7 +809,7 @@ function Editor:renderLine(fontObj, lineText, lineIdx, x, y, color)
             return
         end
     end
-    love.graphics.setColor(color)
+    draw.setColor(color)
     love.graphics.print(lineText, x, y)
 end
 
@@ -824,17 +824,17 @@ function Editor:renderHighlighted(fontObj, lineText, x, y, color, segs)
         local to = math.min(#lineText, s.to or #lineText)
         if to > from then
             if from > last then
-                love.graphics.setColor(color)
-                love.graphics.print(lineText:sub(last + 1, from), x + fontObj:getWidth(lineText:sub(1, last)), y)
+                draw.setColor(color)
+                love.graphics.print(lineText:sub(last + 1, from), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
             end
-            love.graphics.setColor(self:resolveColor(s.color) or color)
-            love.graphics.print(lineText:sub(from + 1, to), x + fontObj:getWidth(lineText:sub(1, from)), y)
+            draw.setColor(self:resolveColor(s.color) or color)
+            love.graphics.print(lineText:sub(from + 1, to), x + draw.textWidth(fontObj, lineText:sub(1, from)), y)
             last = to
         end
     end
     if last < #lineText then
-        love.graphics.setColor(color)
-        love.graphics.print(lineText:sub(last + 1), x + fontObj:getWidth(lineText:sub(1, last)), y)
+        draw.setColor(color)
+        love.graphics.print(lineText:sub(last + 1), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
     end
 end
 
@@ -843,14 +843,14 @@ function Editor:drawLineNumbers(firstRow, lastRow, ty, viewH)
     if gutter <= 0 then return end
     local cf = font.get(theme.font.caption)
     local lh = self:lineHeight()
-    love.graphics.setColor(theme.color("border"))
+    draw.setColor(theme.color("border"))
     love.graphics.rectangle("fill", self.x + self:padding() + gutter - 5, ty, 1, viewH)
     for row = firstRow, lastRow do
         local rowY = ty + (row - 1) * lh - self.scrollY
         local num = tostring(row)
-        local nx = self.x + self:padding() + gutter - 5 - 8 - cf:getWidth(num)
-        love.graphics.setFont(cf)
-        love.graphics.setColor(theme.color("muted"))
+        local nx = self.x + self:padding() + gutter - 5 - 8 - draw.textWidth(cf, num)
+        draw.setFont(cf)
+        draw.setColor(theme.color("muted"))
         love.graphics.print(num, nx, rowY + (lh - cf:getHeight()) / 2)
     end
 end
@@ -903,9 +903,9 @@ function Editor:drawContent()
             local a = math.max(selA, ls)
             local b = math.min(selB, le)
             if b > a then
-                local x0 = textX + f:getWidth(self._text:sub(ls + 1, a))
-                local x1 = textX + f:getWidth(self._text:sub(ls + 1, b))
-                love.graphics.setColor(theme.alpha("primary", 0.28))
+                local x0 = textX + draw.textWidth(f, self._text:sub(ls + 1, a))
+                local x1 = textX + draw.textWidth(f, self._text:sub(ls + 1, b))
+                draw.setColor(theme.alpha("primary", 0.28))
                 love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
             end
         end
@@ -916,9 +916,9 @@ function Editor:drawContent()
                 local a = math.max(m.from, ls)
                 local b = math.min(m.to, le)
                 if b > a then
-                    local x0 = textX + f:getWidth(self._text:sub(ls + 1, a))
-                    local x1 = textX + f:getWidth(self._text:sub(ls + 1, b))
-                    love.graphics.setColor(theme.alpha("warning", 0.32))
+                    local x0 = textX + draw.textWidth(f, self._text:sub(ls + 1, a))
+                    local x1 = textX + draw.textWidth(f, self._text:sub(ls + 1, b))
+                    draw.setColor(theme.alpha("warning", 0.32))
                     love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
                 end
             end
@@ -935,22 +935,22 @@ function Editor:drawContent()
     -- 输入法组合文本（带下划线）
     if self._imeText and #self._imeText > 0 then
         local row = self:offsetToRowCol(self.cursor)
-        local px = tx + f:getWidth(self._text:sub(self:lineStart(row) + 1, self.cursor)) - self.scrollX
+        local px = tx + draw.textWidth(f, self._text:sub(self:lineStart(row) + 1, self.cursor)) - self.scrollX
         local py = ty + (row - 1) * lh - self.scrollY
-        love.graphics.setFont(f)
-        love.graphics.setColor(theme.color("primary"))
+        draw.setFont(f)
+        draw.setColor(theme.color("primary"))
         love.graphics.print(self._imeText, px, py)
         love.graphics.setLineWidth(1.5)
-        love.graphics.line(px, py + f:getHeight() + 1, px + f:getWidth(self._imeText), py + f:getHeight() + 1)
+        love.graphics.line(px, py + f:getHeight() + 1, px + draw.textWidth(f, self._imeText), py + f:getHeight() + 1)
     end
 
     -- 光标
     if self.state.focused and not self.state.disabled and not self:hasSelection() then
         if (love.timer.getTime() % 1) < 0.55 then
             local row = self:offsetToRowCol(self.cursor)
-            local cx = tx + f:getWidth(self._text:sub(self:lineStart(row) + 1, self.cursor)) - self.scrollX
+            local cx = tx + draw.textWidth(f, self._text:sub(self:lineStart(row) + 1, self.cursor)) - self.scrollX
             local cy = ty + (row - 1) * lh - self.scrollY
-            love.graphics.setColor(theme.color("primary"))
+            draw.setColor(theme.color("primary"))
             love.graphics.rectangle("fill", cx, cy, 1.5, lh)
         end
     end

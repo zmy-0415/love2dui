@@ -85,7 +85,7 @@ function Avatar:drawContent()
     -- hover 光环（可点击时）
     if self:isInteractive() and self.state.hovered then
         love.graphics.setLineWidth(2.5)
-        love.graphics.setColor(theme.alpha("primary", 0.55))
+        draw.setColor(theme.alpha("primary", 0.55))
         love.graphics.circle("line", cx, cy, r + 3)
     end
 
@@ -94,48 +94,48 @@ function Avatar:drawContent()
         local s = math.max((size * 1.02) / iw, (size * 1.02) / ih) -- cover
         local dw, dh = iw * s, ih * s
         draw.inCircle(cx, cy, r, function()
-            love.graphics.setColor(1, 1, 1)
+            draw.setColor(1, 1, 1)
             love.graphics.draw(img, cx - dw / 2, cy - dh / 2, 0, s, s)
         end)
     else
         -- 文字回退
         draw.inCircle(cx, cy, r, function()
-            love.graphics.setColor(self:getBgColor())
+            draw.setColor(self:getBgColor())
             love.graphics.circle("fill", cx, cy, r)
         end)
         local text = self:getFallbackText()
         if text ~= "" then
             local f = font.get(math.max(10, math.floor(size * 0.42)))
             local color = self.props.textColor and self:resolveColor(self.props.textColor) or theme.color("onPrimary")
-            draw.text(text, cx - f:getWidth(text) / 2, cy - f:getHeight() / 2, 0, { font = f, color = color })
+            draw.text(text, cx - draw.textWidth(f, text) / 2, cy - f:getHeight() / 2, 0, { font = f, color = color })
         end
     end
 
     -- 角标：true 显示圆点，数字显示计数（99+ 封顶）
     local badge = p.badge
     if badge == true then
-        love.graphics.setColor(theme.color("error"))
+        draw.setColor(theme.color("error"))
         love.graphics.circle("fill", self.x + size - 5, self.y + 5, 4.5)
     elseif badge and tonumber(badge) then
         local n = math.floor(tonumber(badge))
         if n > 0 then
             local label = (n > 99) and "99+" or tostring(n)
             local f = font.get(math.max(9, math.floor(size * 0.26)))
-            local bw = math.max(f:getWidth(label) + 8, 16)
+            local bw = math.max(draw.textWidth(f, label) + 8, 16)
             local bh = math.max(f:getHeight() + 4, 16)
             local bx = self.x + size - bw / 2
             local by = self.y + bh / 2
             if bx + bw / 2 > self.x + size + 4 then bx = self.x + size + 4 - bw / 2 end
             if by - bh / 2 < self.y - 4 then by = self.y - 4 + bh / 2 end
             draw.roundRect(bx - bw / 2, by - bh / 2, bw, bh, bh / 2, theme.color("error"))
-            draw.text(label, bx - f:getWidth(label) / 2, by - f:getHeight() / 2, 0, { font = f, color = { 1, 1, 1 } })
+            draw.text(label, bx - draw.textWidth(f, label) / 2, by - f:getHeight() / 2, 0, { font = f, color = { 1, 1, 1 } })
         end
     end
 
     -- 键盘焦点环
     if self.state.focused then
         love.graphics.setLineWidth(2)
-        love.graphics.setColor(theme.alpha("primary", 0.6))
+        draw.setColor(theme.alpha("primary", 0.6))
         love.graphics.circle("line", cx, cy, r + 2)
     end
 end

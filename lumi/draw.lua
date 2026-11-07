@@ -21,67 +21,148 @@ function draw.lerpColor(a, b, t)
     return out
 end
 
--- 圆角弧顶点缓存（按分段数缓存，避免每帧重复三角函数运算）
-local cornerArcCache = {}
-local function cornerArc(seg)
-    local arc = cornerArcCache[seg]
-    if not arc then
-        arc = {}
-        for i = 0, seg do
-            local a = (math.pi / 2) * (i / seg)
-            arc[#arc + 1] = { c = math.cos(a), s = math.sin(a) }
-        end
-        cornerArcCache[seg] = arc
+--[[
+    绘制状态去重
+    LÖVE 的 setColor/setFont 每次调用都要跨 Lua/C 边界并写入渲染状态，
+    而界面里大量连续绘制使用同一颜色/字体。这里记录当前值，相同则直接跳过。
+    注意：love.graphics.push("all") / pop() 会保存并恢复渲染状态，
+    跨越这类栈操作后必须调用 draw.resetState()，否则缓存与真实状态不一致。
+]]
+local lastColorR, lastColorG, lastColorB, lastColorA
+local hasColor = false
+local lastFont
+
+-- 接受 {r,g,b[,a]} 或 r,g,b[,a] 两种形式
+function draw.setColor(c, g, b, a)
+    local r, gg, bb, aa
+    if type(c) == "table" then
+        r, gg, bb, aa = c[1], c[2], c[3], c[4]
+    else
+        r, gg, bb, aa = c, g, b, a
     end
-    return arc
+    r, gg, bb = r or 0, gg or 0, bb or 0
+    aa = aa or 1
+    if hasColor and r == lastColorR and gg == lastColorG and bb == lastColorB and aa == lastColorA then
+        return
+    end
+    love.graphics.setColor(r, gg, bb, aa)
+    lastColorR, lastColorG, lastColorB, lastColorA = r, gg, bb, aa
+    hasColor = true
 end
 
--- 生成圆角矩形多边形顶点（用于填充）
-local function roundRectPoints(x, y, w, h, r)
-    r = clamp(r or 0, 0, math.min(w, h) / 2)
-    if r <= 0 then
-        return { x, y, x + w, y, x + w, y + h, x, y + h }
+function draw.setFont(f)
+    if f ~= nil and f ~= lastFont then
+        love.graphics.setFont(f)
+        lastFont = f
     end
-    local seg = 6
-    local arc = cornerArc(seg)
-    local pts = {}
-    local function corner(cx, cy, mode)
-        for i = 1, #arc do
-            local c, s = arc[i].c, arc[i].s
-            local dx, dy
-            if mode == 1 then          -- -90..0: (sin, -cos)
-                dx, dy = s, -c
-            elseif mode == 2 then      -- 0..90: (cos, sin)
-                dx, dy = c, s
-            elseif mode == 3 then      -- 90..180: (-sin, cos)
-                dx, dy = -s, c
-            else                       -- 180..270: (-cos, -sin)
-                dx, dy = -c, -s
-            end
-            pts[#pts + 1] = cx + dx * r
-            pts[#pts + 1] = cy + dy * r
+end
+
+-- 状态栈（push/pop、切换 Canvas 等）之后调用，丢弃缓存
+function draw.resetState()
+    hasColor = false
+    lastFont = nil
+end
+
+-- 常用常量，避免每次绘制新建颜色/空表
+local WHITE = { 1, 1, 1, 1 }
+local WHITE3 = { 1, 1, 1 }
+local EMPTY_OPTS = {}
+
+-- 文本测宽缓存：按字体分表，超过上限整体清空（简单且没有 LRU 记账开销）
+local widthCaches = setmetatable({}, { __mode = "k" })
+local WIDTH_CACHE_MAX = 512
+
+function draw.textWidth(f, text)
+    if not text or text == "" or not f then return 0 end
+    local cache = widthCaches[f]
+    if not cache then
+        cache = { n = 0 }
+        widthCaches[f] = cache
+    end
+    local w = cache[text]
+    if w ~= nil then return w end
+    w = f:getWidth(text)
+    if w == nil then return 0 end
+    if cache.n >= WIDTH_CACHE_MAX then
+        for k in pairs(cache) do cache[k] = nil end
+        cache.n = 0
+    end
+    cache[text] = w
+    cache.n = cache.n + 1
+    return w
+end
+
+-- 圆角弧单位坐标（模块加载时算一次，绘制时不再做三角函数）
+local SEG = 6
+local CORNER = {}
+do
+    local modes = { {}, {}, {}, {} }
+    for i = 0, SEG do
+        local a = (math.pi / 2) * (i / SEG)
+        local c, s = math.cos(a), math.sin(a)
+        modes[1][#modes[1] + 1] = { s, -c }    -- 右上
+        modes[2][#modes[2] + 1] = { c, s }     -- 右下
+        modes[3][#modes[3] + 1] = { -s, c }    -- 左下
+        modes[4][#modes[4] + 1] = { -c, -s }   -- 左上
+    end
+    CORNER = modes
+end
+
+-- 顶点缓冲复用：每条圆角矩形固定 4 角 × (SEG+1) 点 × 2 分量 = 56 个数字，
+-- 每次写入同一张表（polygon 立即消费，不存在跨调用持有）。填充/描边各一份，避免嵌套覆盖。
+local fillVerts, lineVerts = {}, {}
+
+local function writeRoundRect(pts, x, y, w, h, r)
+    local n = 0
+    for m = 1, 4 do
+        local unit = CORNER[m]
+        local cx, cy
+        if m == 1 then cx, cy = x + w - r, y + r
+        elseif m == 2 then cx, cy = x + w - r, y + h - r
+        elseif m == 3 then cx, cy = x + r, y + h - r
+        else cx, cy = x + r, y + r end
+        for i = 1, #unit do
+            local p = unit[i]
+            n = n + 1; pts[n] = cx + p[1] * r
+            n = n + 1; pts[n] = cy + p[2] * r
         end
     end
-    corner(x + w - r, y + r, 1)        -- 右上
-    corner(x + w - r, y + h - r, 2)    -- 右下
-    corner(x + r, y + h - r, 3)        -- 左下
-    corner(x + r, y + r, 4)            -- 左上
-    return pts
+    return n
+end
+
+-- 填充圆角矩形（不做颜色处理，供 stencil 遮罩等内部复用）
+local function fillRounded(x, y, w, h, r)
+    r = clamp(r or 0, 0, math.min(w, h) / 2)
+    if r <= 0 then
+        love.graphics.rectangle("fill", x, y, w, h)
+        return
+    end
+    writeRoundRect(fillVerts, x, y, w, h, r)
+    love.graphics.polygon("fill", fillVerts)
 end
 
 -- 填充圆角矩形
 function draw.roundRect(x, y, w, h, r, color)
     if w <= 0 or h <= 0 then return end
-    love.graphics.setColor(color)
-    love.graphics.polygon("fill", roundRectPoints(x, y, w, h, r))
+    draw.setColor(color)
+    fillRounded(x, y, w, h, r)
 end
 
 -- 描边圆角矩形
 function draw.roundRectLine(x, y, w, h, r, color, lineWidth)
     if w <= 0 or h <= 0 then return end
-    love.graphics.setColor(color)
-    love.graphics.setLineWidth(lineWidth or 1)
-    love.graphics.polygon("line", roundRectPoints(x + (lineWidth or 1) / 2, y + (lineWidth or 1) / 2, w - (lineWidth or 1), h - (lineWidth or 1), r))
+    local lw = lineWidth or 1
+    draw.setColor(color)
+    love.graphics.setLineWidth(lw)
+    local ix, iy = x + lw / 2, y + lw / 2
+    local iw, ih = w - lw, h - lw
+    local rr = clamp(r or 0, 0, math.min(iw, ih) / 2)
+    if rr <= 0 then
+        love.graphics.rectangle("line", ix, iy, iw, ih)
+        return
+    end
+    writeRoundRect(lineVerts, ix, iy, iw, ih, rr)
+    love.graphics.polygon("line", lineVerts)
 end
 
 -- 阴影分层参数缓存（按 elevation 缓存）
@@ -176,7 +257,7 @@ end
 
 -- 单行文本（可选省略号截断，按字符边界二分避免截断多字节字符）
 function draw.truncate(font, text, maxWidth)
-    if font:getWidth(text) <= maxWidth then return text end
+    if draw.textWidth(font, text) <= maxWidth then return text end
     local ell = "…"
     local chars = { 0 }
     local i = 0
@@ -189,7 +270,7 @@ function draw.truncate(font, text, maxWidth)
     while lo < hi do
         local mid = math.ceil((lo + hi) / 2)
         local s = text:sub(1, chars[mid + 1]) .. ell
-        if font:getWidth(s) <= maxWidth then
+        if draw.textWidth(font, s) <= maxWidth then
             lo = mid
         else
             hi = mid - 1
@@ -200,14 +281,14 @@ end
 
 -- 绘制文本，opts: font/color/align/limit(换行宽度)/ellipsis/valign
 function draw.text(str, x, y, w, opts)
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     str = str or ""
     local font = opts.font
-    local color = opts.color or { 1, 1, 1, 1 }
+    local color = opts.color or WHITE
     local align = opts.align or "left"
 
-    love.graphics.setFont(font)
-    love.graphics.setColor(color)
+    draw.setFont(font)
+    draw.setColor(color)
 
     if opts.limit and opts.limit > 0 then
         love.graphics.printf(str, x, y, opts.limit, align)
@@ -245,11 +326,11 @@ end
 -- 注意 fit="cover" 时超出 w/h 的部分不会被裁剪，调用方需自行 clip
 function draw.image(img, x, y, w, h, opts)
     if not img or w <= 0 or h <= 0 then return end
-    opts = opts or {}
+    opts = opts or EMPTY_OPTS
     local iw, ih = img:getDimensions()
     if iw <= 0 or ih <= 0 then return end
     local dx, dy, dw, dh = draw.calcFit(iw, ih, w, h, opts.fit)
-    love.graphics.setColor(opts.tint or { 1, 1, 1 })
+    draw.setColor(opts.tint or WHITE3)
     if opts.fit == "stretch" or opts.fit == "fill" then
         love.graphics.draw(img, x, y, 0, w / iw, h / ih)
     elseif opts.fit == "center" then
@@ -262,7 +343,7 @@ end
 -- 在圆角矩形遮罩内绘制（fn 为绘制回调，基于 stencil 实现，兼容 LÖVE 11/12）
 function draw.inRound(x, y, w, h, r, fn)
     draw.stencilMask(function()
-        love.graphics.polygon("fill", roundRectPoints(x, y, w, h, r))
+        fillRounded(x, y, w, h, r)
     end, fn)
 end
 
@@ -278,7 +359,7 @@ function draw.stencilMask(maskFn, fn)
     if love.graphics.setStencilMode then
         -- LÖVE 12：状态式 API；draw 模式不屏蔽颜色写入，遮罩需以全透明色绘制
         love.graphics.setStencilMode("draw", 1)
-        love.graphics.setColor(0, 0, 0, 0)
+        draw.setColor(0, 0, 0, 0)
         maskFn()
         love.graphics.setStencilMode("test", 1)
         fn()

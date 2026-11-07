@@ -192,7 +192,7 @@ function Carousel:drawContent()
     local cy = self.y + self.h / 2
     local ax1, ax2 = self.x + 18, self.x + self.w - 18
     local as = ar * 1.1
-    love.graphics.setColor(0, 0, 0, hoverBoost)
+    draw.setColor(0, 0, 0, hoverBoost)
     love.graphics.circle("fill", ax1, cy, ar)
     love.graphics.circle("fill", ax2, cy, ar)
     Icon.drawIcon("chevron-left", ax1 - as / 2, cy - as / 2, as, { 1, 1, 1, 0.92 })
@@ -206,7 +206,7 @@ function Carousel:drawContent()
             if i == self._page then
                 draw.roundRect(cx - 10, dy - 3, 20, 6, 3, { 1, 1, 1, 0.95 })
             else
-                love.graphics.setColor(1, 1, 1, 0.5)
+                draw.setColor(1, 1, 1, 0.5)
                 love.graphics.circle("fill", cx, dy, 3)
             end
         end

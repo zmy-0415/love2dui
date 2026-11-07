@@ -30,7 +30,7 @@ end
 function Switch:measureContent(availW, availH)
     local f = font.get(theme.font.body)
     local w = TRACK_W
-    if self.props.label then w = w + 8 + f:getWidth(self.props.label) end
+    if self.props.label then w = w + 8 + draw.textWidth(f, self.props.label) end
     return w, math.max(TRACK_H, f:getHeight())
 end
 
@@ -66,7 +66,7 @@ function Switch:drawContent()
     local thumbX = self.x + PAD + (TRACK_W - THUMB - PAD * 2) * self._anim
     local thumbY = by + (TRACK_H - THUMB) / 2
     draw.shadow(thumbX, thumbY, THUMB, THUMB, THUMB / 2, 1)
-    love.graphics.setColor(theme.color("surface"))
+    draw.setColor(theme.color("surface"))
     love.graphics.circle("fill", thumbX + THUMB / 2, thumbY + THUMB / 2, THUMB / 2)
 
     if p.label then

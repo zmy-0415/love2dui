@@ -707,6 +707,53 @@ local function testPerf()
     tr:draw()
     check("tree 虚拟化底部绘制", tr.scrollY > 0)
 
+    -- ---------------- 绘制热路径优化 ----------------
+    -- setColor 去重：连续同色只下发一次
+    local rawSetColor = love.graphics.setColor
+    local colorCalls = 0
+    love.graphics.setColor = function(...) colorCalls = colorCalls + 1; return rawSetColor(...) end
+    draw.resetState()
+    draw.setColor({ 1, 0, 0, 1 })
+    draw.setColor({ 1, 0, 0 })
+    draw.setColor(1, 0, 0, 1)
+    eq("setColor 同色只下发一次", colorCalls, 1)
+    draw.setColor({ 0, 1, 0, 1 })
+    eq("setColor 换色重新下发", colorCalls, 2)
+    love.graphics.setColor = rawSetColor
+    draw.resetState()
+
+    -- setFont 去重
+    local rawSetFont = love.graphics.setFont
+    local fontCalls = 0
+    love.graphics.setFont = function(...) fontCalls = fontCalls + 1; return rawSetFont(...) end
+    draw.resetState()
+    local bf = font.get(theme.font.body)
+    draw.setFont(bf)
+    draw.setFont(bf)
+    eq("setFont 同字体只下发一次", fontCalls, 1)
+    love.graphics.setFont = rawSetFont
+    draw.resetState()
+
+    -- textWidth 缓存
+    local measures = 0
+    local fakeFont = { getWidth = function(_, s) measures = measures + 1; return #s * 7 end }
+    eq("textWidth 首次测量", draw.textWidth(fakeFont, "abc"), 21)
+    eq("textWidth 命中缓存", draw.textWidth(fakeFont, "abc"), 21)
+    eq("textWidth 只测量一次", measures, 1)
+    eq("textWidth 空串为 0", draw.textWidth(fakeFont, ""), 0)
+
+    -- roundRect 复用顶点缓冲（不再每帧新建 56 个数字的表）
+    local bufs = {}
+    local rawPolygon = love.graphics.polygon
+    love.graphics.polygon = function(mode, pts) bufs[#bufs + 1] = pts; return rawPolygon(mode, pts) end
+    draw.roundRect(0, 0, 10, 10, 3, { 1, 1, 1 })
+    draw.roundRect(0, 0, 20, 20, 5, { 1, 1, 1 })
+    draw.roundRectLine(0, 0, 20, 20, 5, { 1, 1, 1 }, 1)
+    love.graphics.polygon = rawPolygon
+    check("roundRect 复用填充顶点表", bufs[1] ~= nil and bufs[1] == bufs[2])
+    check("描边使用独立顶点表", bufs[3] ~= nil and bufs[3] ~= bufs[1])
+    eq("圆角矩形顶点数固定", bufs[1] and #bufs[1] or 0, 56)
+
     -- table 2000 行绘制冒烟（既有虚拟化）
     local rows = {}
     for i = 1, 2000 do rows[i] = { i, "x" } end

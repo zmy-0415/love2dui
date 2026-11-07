@@ -30,11 +30,11 @@ function Label:measureContent(availW, availH)
         local _, lines = f:getWrap(text, availW)
         local w = 0
         for _, l in ipairs(lines) do
-            w = math.max(w, f:getWidth(l))
+            w = math.max(w, draw.textWidth(f, l))
         end
         return w, #lines * f:getHeight()
     end
-    return f:getWidth(text), f:getHeight()
+    return draw.textWidth(f, text), f:getHeight()
 end
 
 function Label:drawContent()

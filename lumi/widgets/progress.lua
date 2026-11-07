@@ -57,14 +57,14 @@ function Progress:drawContent()
         local cy = self.y + self.h / 2
         local r = math.min(self.w, self.h) / 2 - thickness / 2 - 1
         love.graphics.setLineWidth(thickness)
-        love.graphics.setColor(theme.color("surface2"))
+        draw.setColor(theme.color("surface2"))
         love.graphics.arc("line", "open", cx, cy, r, 0, math.pi * 2)
-        love.graphics.setColor(base)
+        draw.setColor(base)
         love.graphics.arc("line", "open", cx, cy, r, -math.pi / 2, -math.pi / 2 + math.pi * 2 * frac)
         if p.showValue then
             local f = font.get(theme.font.caption)
             local text = math.floor(frac * 100 + 0.5) .. "%"
-            draw.text(text, cx - f:getWidth(text) / 2, cy - f:getHeight() / 2, 0, { font = f, color = theme.color("text") })
+            draw.text(text, cx - draw.textWidth(f, text) / 2, cy - f:getHeight() / 2, 0, { font = f, color = theme.color("text") })
         end
         return
     end

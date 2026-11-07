@@ -83,7 +83,7 @@ function Button:measureContent(availW, availH)
     local f = font.get(theme.font.body)
     local text = self.props.text or ""
     local h = self.props.height or theme.control.height
-    local w = f:getWidth(text) + theme.control.padX * 2
+    local w = draw.textWidth(f, text) + theme.control.padX * 2
     w = math.max(w, theme.control.minWidth)
     return w, h
 end
@@ -155,7 +155,7 @@ function Button:drawContent()
         local e = animate.easings.cubicOut(math.min(1, r.t))
         local a = (1 - math.min(1, r.t)) * 0.28
         draw.pushClip(self.x, self.y, self.w, self.h)
-        love.graphics.setColor({ rippleColor[1], rippleColor[2], rippleColor[3], a })
+        draw.setColor({ rippleColor[1], rippleColor[2], rippleColor[3], a })
         love.graphics.circle("fill", self.x + r.x, self.y + r.y, e * r.maxR)
         draw.popClip()
     end
@@ -163,7 +163,7 @@ function Button:drawContent()
     -- 文本（默认居中，可左/右对齐）
     local f = font.get(theme.font.body)
     local text = p.text or ""
-    local tw = f:getWidth(text)
+    local tw = draw.textWidth(f, text)
     local align = p.align or "center"
     local padX = p.padX or theme.control.padX
     local tx

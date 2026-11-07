@@ -5,6 +5,7 @@
     未知图标名安全降级为方块占位。
 ]]
 
+local draw = require("lumi.draw")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 
@@ -220,6 +221,19 @@ function Icon:measureContent()
     return s, s
 end
 
+-- 图标绘制指令集：模块级常量，避免每次绘制都新建 8 个转发闭包
+local WHITE = { 1, 1, 1, 1 }
+
+local ICON_GFX = {
+    line = function(...) love.graphics.line(...) end,
+    rect = function(rx, ry, rw, rh) love.graphics.rectangle("line", rx, ry, rw, rh) end,
+    circle = function(cx, cy, r) love.graphics.circle("line", cx, cy, r) end,
+    arc = function(cx, cy, r, a1, a2) love.graphics.arc("line", "open", cx, cy, r, a1, a2) end,
+    poly = function(pts) love.graphics.polygon("line", pts) end,
+    fillPoly = function(pts) love.graphics.polygon("fill", pts) end,
+    fillCircle = function(cx, cy, r) love.graphics.circle("fill", cx, cy, r) end,
+}
+
 -- 静态绘制：在 (x,y) 绘制 size 大小的图标（供其他控件复用）
 function Icon.drawIcon(name, x, y, size, color)
     local fn = icons[name]
@@ -229,18 +243,9 @@ function Icon.drawIcon(name, x, y, size, color)
     love.graphics.setLineWidth(2)
     love.graphics.setLineJoin("miter")
     love.graphics.setLineStyle("smooth")
-    love.graphics.setColor(color or { 1, 1, 1, 1 })
+    draw.setColor(color or WHITE)
     if fn then
-        local g = {
-            line = function(...) love.graphics.line(...) end,
-            rect = function(rx, ry, rw, rh) love.graphics.rectangle("line", rx, ry, rw, rh) end,
-            circle = function(cx, cy, r) love.graphics.circle("line", cx, cy, r) end,
-            arc = function(cx, cy, r, a1, a2) love.graphics.arc("line", "open", cx, cy, r, a1, a2) end,
-            poly = function(pts) love.graphics.polygon("line", pts) end,
-            fillPoly = function(pts) love.graphics.polygon("fill", pts) end,
-            fillCircle = function(cx, cy, r) love.graphics.circle("fill", cx, cy, r) end,
-        }
-        fn(g)
+        fn(ICON_GFX)
     else
         -- 未知图标：虚线方块占位
         love.graphics.setLineWidth(1.5)
@@ -248,6 +253,7 @@ function Icon.drawIcon(name, x, y, size, color)
         love.graphics.line(4, 4, 20, 20)
     end
     love.graphics.pop()
+    draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 
 function Icon:drawContent()

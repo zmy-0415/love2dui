@@ -154,7 +154,7 @@ function Input:setCursorFromX(x)
     local best, bestDist = 0, math.huge
     local i = 0
     while true do
-        local d = math.abs(f:getWidth(display:sub(1, i)) - tx)
+        local d = math.abs(draw.textWidth(f, display:sub(1, i)) - tx)
         if d < bestDist then bestDist = d; best = i end
         i = draw.utf8Next(display, i)
         if not i then break end
@@ -296,7 +296,7 @@ function Input:drawContent()
     local innerW = fw - PAD_X * 2
 
     -- 横向滚动：文本超出可视宽度时平移内容，保证光标（含 IME 组合串）始终可见
-    local caretPx = f:getWidth(display:sub(1, cursorByte)) + (imeText and f:getWidth(imeText) or 0)
+    local caretPx = draw.textWidth(f, display:sub(1, cursorByte)) + (imeText and draw.textWidth(f, imeText) or 0)
     local scrollX = self._scrollX or 0
     local edge = 2
     if caretPx - scrollX > innerW - edge then
@@ -304,7 +304,7 @@ function Input:drawContent()
     elseif caretPx - scrollX < 0 then
         scrollX = caretPx
     end
-    local maxScrollX = math.max(0, f:getWidth(display) + edge * 2 - innerW)
+    local maxScrollX = math.max(0, draw.textWidth(f, display) + edge * 2 - innerW)
     scrollX = math.max(0, math.min(maxScrollX, scrollX))
     self._scrollX = scrollX
     local textX = fx + PAD_X - scrollX
@@ -317,9 +317,9 @@ function Input:drawContent()
 
     draw.pushClip(fx + PAD_X, fy, innerW, fh)
     if selA and selB and selB > selA then
-        local preW = f:getWidth(display:sub(1, selA))
-        local selW = f:getWidth(display:sub(selA + 1, selB))
-        love.graphics.setColor(theme.alpha("primary", 0.28))
+        local preW = draw.textWidth(f, display:sub(1, selA))
+        local selW = draw.textWidth(f, display:sub(selA + 1, selB))
+        draw.setColor(theme.alpha("primary", 0.28))
         love.graphics.rectangle("fill", textX + preW, textY, selW, f:getHeight())
     end
     if #display == 0 and not imeText and p.placeholder then
@@ -331,8 +331,8 @@ function Input:drawContent()
     if self.state.focused and not self.state.disabled and not self:hasSelection() then
         if (love.timer.getTime() % 1) < 0.55 then
             local cursorText = display:sub(1, cursorByte) .. (imeText or "")
-            local cursorX = textX + f:getWidth(cursorText)
-            love.graphics.setColor(theme.color("primary"))
+            local cursorX = textX + draw.textWidth(f, cursorText)
+            draw.setColor(theme.color("primary"))
             love.graphics.rectangle("fill", cursorX, textY, 1.5, f:getHeight())
         end
     end
@@ -343,26 +343,26 @@ end
 function Input:drawTextField(f, display, cursorByte, imeText, x, y, color)
     -- 显式使用正文字体：上游 label 用 caption 字体绘制过，若不重置会导致
     -- 渲染字体与 getWidth 计算字体不一致，光标位置错位、文本后出现空白
-    love.graphics.setFont(f)
+    draw.setFont(f)
     if not imeText or #imeText == 0 then
-        love.graphics.setColor(color)
+        draw.setColor(color)
         love.graphics.print(display, x, y)
         return
     end
     local prefix = display:sub(1, cursorByte)
     local suffix = display:sub(cursorByte + 1)
-    local prefixW = f:getWidth(prefix)
-    local imeW = f:getWidth(imeText)
+    local prefixW = draw.textWidth(f, prefix)
+    local imeW = draw.textWidth(f, imeText)
 
-    love.graphics.setColor(color)
+    draw.setColor(color)
     love.graphics.print(prefix, x, y)
 
-    love.graphics.setColor(theme.color("primary"))
+    draw.setColor(theme.color("primary"))
     love.graphics.print(imeText, x + prefixW, y)
     love.graphics.setLineWidth(1.5)
     love.graphics.line(x + prefixW, y + f:getHeight() + 1, x + prefixW + imeW, y + f:getHeight() + 1)
 
-    love.graphics.setColor(color)
+    draw.setColor(color)
     love.graphics.print(suffix, x + prefixW + imeW, y)
 end
 

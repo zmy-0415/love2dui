@@ -7,6 +7,7 @@
 
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
+local draw = require("lumi.draw")
 
 local Rating = setmetatable({}, { __index = Widget })
 Rating.__index = Rating
@@ -54,11 +55,11 @@ function Rating:drawContent()
         local cy = self.y + self.h / 2
         local r = size / 2 - 2
         if i <= self.value then
-            love.graphics.setColor(base)
+            draw.setColor(base)
             love.graphics.circle("fill", cx, cy, r)
         else
             love.graphics.setLineWidth(1.5)
-            love.graphics.setColor(theme.color("border"))
+            draw.setColor(theme.color("border"))
             love.graphics.circle("line", cx, cy, r)
         end
     end

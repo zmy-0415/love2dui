@@ -27,7 +27,7 @@ function Radio:measureContent(availW, availH)
     local f = font.get(theme.font.body)
     local size = 20
     local w = size
-    if self.props.label then w = w + 8 + f:getWidth(self.props.label) end
+    if self.props.label then w = w + 8 + draw.textWidth(f, self.props.label) end
     return w, math.max(size, f:getHeight())
 end
 
@@ -69,15 +69,15 @@ function Radio:drawContent()
     local cxb = bx + size / 2
     local cyb = by + size / 2
 
-    love.graphics.setColor(self.state.hovered and theme.color("surface") or theme.color("surface2"))
+    draw.setColor(self.state.hovered and theme.color("surface") or theme.color("surface2"))
     love.graphics.circle("fill", cxb, cyb, size / 2)
 
     love.graphics.setLineWidth(2)
-    love.graphics.setColor(self.checked and base or theme.color("border"))
+    draw.setColor(self.checked and base or theme.color("border"))
     love.graphics.circle("line", cxb, cyb, size / 2 - 1)
 
     if self._anim > 0 then
-        love.graphics.setColor({ base[1], base[2], base[3], self._anim })
+        draw.setColor({ base[1], base[2], base[3], self._anim })
         love.graphics.circle("fill", cxb, cyb, (size / 2 - 4) * self._anim)
     end
 

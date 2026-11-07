@@ -134,7 +134,7 @@ function Tabs:draw()
         local color = theme.color("muted")
         if i == self.active then color = theme.color("primary") end
         if self._hoverTab == i and i ~= self.active then color = theme.color("text") end
-        local tw = f:getWidth(label)
+        local tw = draw.textWidth(f, label)
         draw.text(label, r.x + (r.w - tw) / 2, self.y + (HEADER_H - f:getHeight()) / 2, 0, { font = f, color = color })
     end
 

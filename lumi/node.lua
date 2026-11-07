@@ -274,10 +274,11 @@ function Node:drawCached()
         self:renderTree()
         draw.clipOffsetX, draw.clipOffsetY = ox, oy
         love.graphics.pop()
+        draw.resetState()   -- pop 恢复了渲染状态（颜色/字体），缓存作废
         self._cacheCv = cv
         self._cacheW, self._cacheH = self.w, self.h
     end
-    love.graphics.setColor(1, 1, 1, 1)
+    draw.setColor(1, 1, 1, 1)
     love.graphics.draw(cv, self.x, self.y)
 end
 

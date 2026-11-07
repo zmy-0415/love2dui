@@ -47,7 +47,7 @@ function Dialog:draw()
     if not self.visible then return end
     local t = self._ovT or 1
     -- 遮罩（随进出场淡入淡出，不受面板缩放影响）
-    love.graphics.setColor({ 0, 0, 0, 0.55 * t })
+    draw.setColor({ 0, 0, 0, 0.55 * t })
     love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
 
     -- 面板：中心缩放进场（0.94 → 1）
@@ -81,6 +81,7 @@ function Dialog:draw()
         c:draw()
     end
     love.graphics.pop()
+    draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 
 return Dialog

@@ -7,6 +7,7 @@
         love.draw       → ui:draw() 后调用 lumi.debug.draw(ui)
 ]]
 
+local draw = require("lumi.draw")
 local font = require("lumi.font")
 
 local debug = {}
@@ -75,14 +76,14 @@ function debug.draw(ui)
         if node.w > 0 and node.h > 0 then
             local color = node.acceptsChildren and { 0.3, 0.7, 1, 0.6 } or { 1, 0.6, 0.3, 0.6 }
             love.graphics.setLineWidth(1)
-            love.graphics.setColor(color)
+            draw.setColor(color)
             love.graphics.rectangle("line", node.x, node.y, node.w, node.h)
         end
     end
 
     -- 信息面板
     local f = font.get(12)
-    love.graphics.setFont(f)
+    draw.setFont(f)
     local lines = { "LumiUI Debug", "FPS: " .. fps, "Nodes: " .. nodeCount }
     local maxLines = 32
     local function walk(node, depth)
@@ -102,9 +103,9 @@ function debug.draw(ui)
     local pad = 8
     local panelW = 320
     local panelH = #lines * lineH + pad * 2
-    love.graphics.setColor({ 0.05, 0.05, 0.08, 0.78 })
+    draw.setColor({ 0.05, 0.05, 0.08, 0.78 })
     love.graphics.rectangle("fill", 10, 10, panelW, panelH)
-    love.graphics.setColor({ 1, 1, 1, 1 })
+    draw.setColor({ 1, 1, 1, 1 })
     for i, line in ipairs(lines) do
         love.graphics.print(line, 10 + pad, 10 + pad + (i - 1) * lineH)
     end

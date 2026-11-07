@@ -32,7 +32,7 @@ function Divider:drawContent()
     local color = p.color and self:resolveColor(p.color) or theme.color("border")
 
     if p.direction == "vertical" then
-        love.graphics.setColor(color)
+        draw.setColor(color)
         love.graphics.rectangle("fill", self.x + self.w / 2, self.y, 1, self.h)
         return
     end
@@ -40,14 +40,14 @@ function Divider:drawContent()
     local cy = self.y + self.h / 2
     if p.text then
         local f = font.get(theme.font.caption)
-        local tw = f:getWidth(p.text)
+        local tw = draw.textWidth(f, p.text)
         local tx = self.x + (self.w - tw) / 2
-        love.graphics.setColor(color)
+        draw.setColor(color)
         love.graphics.rectangle("fill", self.x, cy, tx - self.x - 8, 1)
         love.graphics.rectangle("fill", tx + tw + 8, cy, self.x + self.w - (tx + tw + 8), 1)
         draw.text(p.text, tx, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("muted") })
     else
-        love.graphics.setColor(color)
+        draw.setColor(color)
         love.graphics.rectangle("fill", self.x, cy, self.w, 1)
     end
 end

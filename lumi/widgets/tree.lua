@@ -164,7 +164,7 @@ function Tree:draw()
             if row.hasChildren then
                 local ax = x + 4
                 local ay = rowY + ROW_H / 2
-                love.graphics.setColor(theme.color("muted"))
+                draw.setColor(theme.color("muted"))
                 love.graphics.setLineWidth(1.5)
                 if self._expanded[row.item] then
                     love.graphics.line(ax - 4, ay - 2, ax, ay + 2)

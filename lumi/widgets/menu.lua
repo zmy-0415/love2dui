@@ -32,7 +32,7 @@ function Menu:getTops()
     local x = self.x
     for _, it in ipairs(self.props.items or {}) do
         local label = it.label or it.text or ""
-        local w = f:getWidth(label) + 24
+        local w = draw.textWidth(f, label) + 24
         tops[#tops + 1] = { x = x, w = w, item = it, label = label }
         x = x + w
     end
@@ -43,7 +43,7 @@ function Menu:measureContent(availW, availH)
     local totalW = 0
     local f = font.get(theme.font.body)
     for _, it in ipairs(self.props.items or {}) do
-        totalW = totalW + f:getWidth(it.label or "") + 24
+        totalW = totalW + draw.textWidth(f, it.label or "") + 24
     end
     return totalW, 40
 end
@@ -61,7 +61,7 @@ function Menu:buildPanel(items, ctx)
     local maxW = 120
     for _, it in ipairs(items or {}) do
         local label = it.label or ""
-        maxW = math.max(maxW, f:getWidth(label) + 48)
+        maxW = math.max(maxW, draw.textWidth(f, label) + 48)
         if it.divider then
             panel:addChild(Divider.new({ margin = { x = 8, y = 4 } }))
         else
@@ -146,7 +146,7 @@ function Menu:drawContent()
             draw.roundRect(t.x + 2, self.y + 4, t.w - 4, self.h - 8, theme.shape.small, theme.alpha("primary", 0.14))
         end
         local color = (i == self._open) and theme.color("primary") or theme.color("text")
-        local tw = f:getWidth(t.label)
+        local tw = draw.textWidth(f, t.label)
         draw.text(t.label, t.x + (t.w - tw) / 2, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = color })
     end
 end

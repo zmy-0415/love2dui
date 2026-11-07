@@ -554,7 +554,7 @@ function Scene:drawToasts()
         local yOff = (1 - tIn) * 24 - (1 - tOut) * 12
         local meta = t.type and toastMeta[t.type] or nil
         local text = t.text
-        local tw = f:getWidth(text)
+        local tw = draw.textWidth(f, text)
         local iconW = meta and 26 or 0
         local bw = tw + 32 + iconW
         local bh = 40

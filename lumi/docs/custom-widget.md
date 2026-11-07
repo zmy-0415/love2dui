@@ -88,6 +88,10 @@ end
   读取它实现悬停/按压样式。
 - **主题**：通过 `require("lumi.theme")` 取色，`self:resolveColor(c)` 支持色名/颜色表。
 - **文本**：使用 `require("lumi.font")` 与 `require("lumi.draw")` 的工具（已处理 CJK）。
+- **颜色/字体**：请用 `draw.setColor(...)`、`draw.setFont(...)` 代替 `love.graphics.setColor/setFont`。
+  框架会缓存当前颜色与字体，连续同值不再下发；若绕过这层直接调用 `love.graphics`，
+  缓存会与实际状态不一致，导致后续绘制被错误跳过。跨 `love.graphics.push("all")/pop()`
+  之后调用 `draw.resetState()` 丢弃缓存。
 - **测量缓存**：若控件内容在运行时变化，需调用 `self:invalidate()` 使布局缓存失效。
 - **动画**：`require("lumi.animate")` 的 `animate.to(self, {field = value}, {duration=..})`。
 - **事件**：事件钩子的 `ctx` 参数是场景对象，可用于 `ctx:setFocus(...)`、`ctx:openOverlay(...)` 等。

@@ -153,11 +153,12 @@ function Dropdown:drawContent()
     love.graphics.push()
     love.graphics.translate(ax, ay)
     love.graphics.rotate((self._arrowT or 0) * math.pi)
-    love.graphics.setColor(theme.color("muted"))
+    draw.setColor(theme.color("muted"))
     love.graphics.setLineWidth(2)
     love.graphics.line(-4, -2, 0, 2)
     love.graphics.line(0, 2, 4, -2)
     love.graphics.pop()
+    draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 
 return Dropdown

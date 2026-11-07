@@ -27,7 +27,7 @@ function Checkbox:measureContent(availW, availH)
     local f = font.get(theme.font.body)
     local size = 20
     local w = size
-    if self.props.label then w = w + 8 + f:getWidth(self.props.label) end
+    if self.props.label then w = w + 8 + draw.textWidth(f, self.props.label) end
     return w, math.max(size, f:getHeight())
 end
 
@@ -63,7 +63,7 @@ function Checkbox:drawContent()
 
     if self._anim > 0 then
         draw.roundRect(bx, by, size, size, radius, { base[1], base[2], base[3], self._anim })
-        love.graphics.setColor({ theme.color("onPrimary")[1], theme.color("onPrimary")[2], theme.color("onPrimary")[3], self._anim })
+        draw.setColor({ theme.color("onPrimary")[1], theme.color("onPrimary")[2], theme.color("onPrimary")[3], self._anim })
         love.graphics.setLineWidth(2.5)
         local x1, y1 = bx + 5, by + size / 2
         local x2, y2 = bx + size / 2, by + size - 5
