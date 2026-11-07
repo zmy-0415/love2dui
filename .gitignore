@@ -1,0 +1,12 @@
+# 构建产物
+build/
+*.love
+*.love.zip
+
+# 自检触发标记
+verify.flag
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

@@ -151,6 +151,22 @@ luajit tests/headless.lua     # 或 lua5.4 tests/headless.lua
 输出 `[HEADLESS] 11 total, 11 passed, 0 failed`。它验证框架在没有全局 `love` 时仍能建树、
 布局、绘制、处理事件，并用假时钟复现光标闪烁。
 
+CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 的 headless 冒烟、xvfb + 软件渲染下的
+完整套件、`luacheck` 静态检查。
+
+## 📦 打包发布
+
+```powershell
+# Windows：产出 build\lumiui-<version>.love
+powershell -ExecutionPolicy Bypass -File tools\pack.ps1
+
+# 其它平台：等价的 zip（main.lua 必须在包根目录）
+zip -r lumiui.love main.lua conf.lua README.md lumi demo tests -x "*.DS_Store"
+```
+
+版本号只在 `lumi/init.lua` 的 `lumi.version` 维护，打包脚本与 CHANGELOG 与之对齐。
+`.love` 可直接 `love build\lumiui-0.2.0.love` 运行，也可作为发布附件分发。
+
 ## 🎨 主题与动画
 
 ```lua
