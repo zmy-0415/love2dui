@@ -332,6 +332,11 @@ function Node:isInteractive()
     return not self.state.disabled
 end
 
+-- 子节点是否参与命中、焦点收集与更新（Tabs 等只激活当前页的容器覆写此方法）
+function Node:isChildActive(child)
+    return child.visible and not child._bpHidden
+end
+
 function Node:isFocusable()
     return false
 end

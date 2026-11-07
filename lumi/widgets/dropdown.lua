@@ -70,11 +70,14 @@ function Dropdown:onUpdate(dt)
 end
 
 function Dropdown:toggle(ctx)
-    if self._list then
-        ctx:closeOverlay(self._list)
+    -- 只有仍在栈中的列表才算展开；正在退场的旧列表直接丢弃并重新打开
+    local list = self._list
+    if list and not list._closing then
+        ctx:closeOverlay(list)
         self._list = nil
         return
     end
+    self._list = nil
     local items = self:getItems()
     -- 左右 padding 设为 0，使选项宽度与下拉框宽度一致、文字起始位置对齐；
     -- 上下保留 4 让列表项不贴圆角边缘
@@ -117,7 +120,13 @@ function Dropdown:toggle(ctx)
     list.x = self.x
     list.y = self.y + self.h + 4
     self._list = list
-    ctx:openOverlay(list, { closeOnOutside = true })
+    ctx:openOverlay(list, {
+        closeOnOutside = true,
+        -- 列表被外部点击 / Escape 关闭时同步状态，否则箭头卡在展开态、再次点击不重开
+        onClose = function()
+            if self._list == list then self._list = nil end
+        end,
+    })
 end
 
 function Dropdown:drawContent()

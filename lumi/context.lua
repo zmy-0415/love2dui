@@ -190,6 +190,7 @@ end
 function Scene:openOverlay(node, opts)
     opts = opts or {}
     node._overlayOpts = opts
+    node._closeNotified = nil
     node._ctx = self
     if opts.modal then self.modal = node end
     table.insert(self.overlays, node)
@@ -200,6 +201,40 @@ function Scene:openOverlay(node, opts)
     return node
 end
 
+-- 节点是否位于某棵子树内（浮层关闭时清理指向其内部的 hover / focus）
+local function isInside(node, root)
+    local n = node
+    while n do
+        if n == root then return true end
+        n = n.parent
+    end
+    return false
+end
+
+-- 从栈中移除浮层并统一善后：解除模态、清理 hover/focus、触发一次 onClose
+local function detachOverlay(self, node)
+    for i, o in ipairs(self.overlays) do
+        if o == node then
+            table.remove(self.overlays, i)
+            break
+        end
+    end
+    if self.modal == node then self.modal = nil end
+    if self.hover and isInside(self.hover, node) then
+        self.hover.state.hovered = false
+        self.hover = nil
+    end
+    if self.focus and isInside(self.focus, node) then
+        self:setFocus(nil)
+    end
+    node._closing = nil
+    local opts = node._overlayOpts
+    if opts and opts.onClose and not node._closeNotified then
+        node._closeNotified = true
+        opts.onClose()
+    end
+end
+
 -- 关闭悬浮层：带动画节点先播退场（期间不参与命中），结束后真正移除
 function Scene:closeOverlay(node)
     for i, o in ipairs(self.overlays) do
@@ -207,8 +242,8 @@ function Scene:closeOverlay(node)
             if node._ovAnim and not node._closing then
                 -- 立即解除模态拦截，退场动画只负责视觉
                 if self.modal == node then self.modal = nil end
-                if self.hover == node then
-                    node.state.hovered = false
+                if self.hover and isInside(self.hover, node) then
+                    self.hover.state.hovered = false
                     self.hover = nil
                 end
                 node._closing = true
@@ -216,22 +251,12 @@ function Scene:closeOverlay(node)
                 animate.to(node, { _ovT = 0 }, {
                     duration = 0.14, easing = "quad",
                     onDone = function()
-                        for j, x in ipairs(self.overlays) do
-                            if x == node then table.remove(self.overlays, j); break end
-                        end
-                        node._closing = nil
-                        if node._overlayOpts and node._overlayOpts.onClose then
-                            node._overlayOpts.onClose()
-                        end
+                        detachOverlay(self, node)
                     end,
                 })
                 return true
             end
-            table.remove(self.overlays, i)
-            if self.modal == node then self.modal = nil end
-            if node._overlayOpts and node._overlayOpts.onClose then
-                node._overlayOpts.onClose()
-            end
+            detachOverlay(self, node)
             return true
         end
     end
@@ -263,15 +288,41 @@ end
 
 -- ---------------- 命中与焦点 ----------------
 
-function Scene:hitTest(x, y)
-    if self.modal then
-        if self.modal:contains(x, y) then return self.modal:hitTest(x, y) end
-        return nil
+-- 模态层在 overlays 中的位置：位于它下方的浮层不参与交互
+function Scene:_modalIndex()
+    if not self.modal then return nil end
+    for i, o in ipairs(self.overlays) do
+        if o == self.modal then return i end
     end
-    for i = #self.overlays, 1, -1 do
+    return nil
+end
+
+-- 在浮层栈中查找命中目标，返回 (节点, 是否被浮层拦截)。
+-- 模态层之上的浮层优先（弹窗里的下拉/菜单可以正常交互），其次模态层；
+-- 栈中存在活动浮层时，落在其外的点不会穿透到 root。
+function Scene:_overlayTarget(x, y)
+    local from = self:_modalIndex() or 1
+    local hasLive = false
+    for i = #self.overlays, from, -1 do
         local o = self.overlays[i]
-        if not o._closing and o:contains(x, y) then return o:hitTest(x, y) end
+        if not o._closing then
+            hasLive = true
+            if o:contains(x, y) then
+                return o:hitTest(x, y), true
+            end
+        end
     end
+    if self.modal then
+        if self.modal:contains(x, y) then return self.modal:hitTest(x, y), true end
+        return nil, true
+    end
+    return nil, hasLive
+end
+
+function Scene:hitTest(x, y)
+    local hit, blocked = self:_overlayTarget(x, y)
+    if hit then return hit end
+    if blocked then return nil end
     if self.root then return self.root:hitTest(x, y) end
     return nil
 end
@@ -319,23 +370,18 @@ end
 
 function Scene:mousepressed(x, y, button)
     self._mouseX, self._mouseY = x, y
-    if self.modal then
-        local d = self.modal
-        if d:contains(x, y) then
-            self:_press(d:hitTest(x, y), x, y, button)
-        else
-            local opts = d._overlayOpts or {}
-            if opts.closeOnOutside ~= false then self:closeOverlay(d) end
-        end
-        return
-    end
-    if not self.modal then
-        local top = self:topOverlay()
-        if top then
-            if top:contains(x, y) then
-                self:_press(top:hitTest(x, y), x, y, button)
+    -- 从最高层浮层开始：命中则交互，落空则关闭该层并吞掉这次点击（不穿透到下层）
+    local from = self:_modalIndex() or 1
+    for i = #self.overlays, from, -1 do
+        local o = self.overlays[i]
+        if not o._closing then
+            if o:contains(x, y) then
+                self:_press(o:hitTest(x, y), x, y, button)
+            elseif o == self.modal then
+                local opts = o._overlayOpts or {}
+                if opts.closeOnOutside ~= false then self:closeOverlay(o) end
             else
-                self:closeOverlay(top)
+                self:closeOverlay(o)
             end
             return
         end
@@ -345,17 +391,7 @@ function Scene:mousepressed(x, y, button)
 end
 
 function Scene:mousereleased(x, y, button)
-    local hit
-    if self.modal then
-        if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
-    else
-        local top = self:topOverlay()
-        if top then
-            if top:contains(x, y) then hit = top:hitTest(x, y) end
-        else
-            hit = self.root and self.root:hitTest(x, y) or nil
-        end
-    end
+    local hit = self:hitTest(x, y)
     local pressed = self.pressed
     if pressed then
         pressed:mousereleased(x, y, button, self, hit)
@@ -366,17 +402,7 @@ end
 
 function Scene:mousemoved(x, y)
     self._mouseX, self._mouseY = x, y
-    local hit
-    if self.modal then
-        if self.modal:contains(x, y) then hit = self.modal:hitTest(x, y) end
-    else
-        local top = self:topOverlay()
-        if top then
-            if top:contains(x, y) then hit = top:hitTest(x, y) end
-        else
-            hit = self.root and self.root:hitTest(x, y) or nil
-        end
-    end
+    local hit = self:hitTest(x, y)
     if hit ~= self.hover then
         if self.hover then
             self.hover.state.hovered = false
@@ -400,17 +426,7 @@ function Scene:mousemoved(x, y)
 end
 
 function Scene:wheelmoved(x, y)
-    local hit
-    if self.modal then
-        if self.modal:contains(self._mouseX, self._mouseY) then hit = self.modal:hitTest(self._mouseX, self._mouseY) end
-    else
-        local top = self:topOverlay()
-        if top then
-            if top:contains(self._mouseX, self._mouseY) then hit = top:hitTest(self._mouseX, self._mouseY) end
-        else
-            hit = self.root and self.root:hitTest(self._mouseX, self._mouseY) or nil
-        end
-    end
+    local hit = self:hitTest(self._mouseX, self._mouseY)
     local n = hit
     while n do
         if n.isScroll then

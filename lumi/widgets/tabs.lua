@@ -56,6 +56,30 @@ function Tabs:arrange(x, y, w, h)
     end
 end
 
+-- 仅当前页参与命中、焦点与更新（非活动页停在旧坐标，不能穿透点击或抢焦点）
+function Tabs:isChildActive(child)
+    return child == self.children[self.active] and child.visible and not child._bpHidden
+end
+
+function Tabs:hitTest(x, y)
+    if not self.visible or self._bpHidden then return nil end
+    if not self:contains(x, y) then return nil end
+    -- 标签头由自身处理点击
+    if y < self.y + HEADER_H then return self end
+    local child = self.children[self.active]
+    if child then
+        local hit = child:hitTest(x, y)
+        if hit then return hit end
+    end
+    return self
+end
+
+function Tabs:update(dt)
+    self:onUpdate(dt)
+    local child = self.children[self.active]
+    if child and child.visible then child:update(dt) end
+end
+
 function Tabs:setActive(i)
     if i ~= self.active then
         self.active = i
