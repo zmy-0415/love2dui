@@ -175,8 +175,10 @@ local function shadowLayers(elevation)
         local intensity = math.min(0.22, 0.08 + elevation * 0.04)
         for i = 1, n do
             local t = i / n
+            local a = intensity * (1 - t) * (1 - t)
             layers[i] = {
-                a = intensity * (1 - t) * (1 - t),
+                a = a,
+                color = { 0, 0, 0, a },   -- 颜色表随分层缓存，绘制时不再每层新建
                 spread = t * elevation * 1.5,
                 dy = t * elevation * 1.1,
             }
@@ -193,7 +195,7 @@ function draw.shadow(x, y, w, h, r, elevation)
     local layers = shadowLayers(elevation)
     for i = 1, #layers do
         local L = layers[i]
-        draw.roundRect(x - L.spread, y + L.dy, w + L.spread * 2, h + L.spread * 2, r + L.spread, { 0, 0, 0, L.a })
+        draw.roundRect(x - L.spread, y + L.dy, w + L.spread * 2, h + L.spread * 2, r + L.spread, L.color)
     end
 end
 
