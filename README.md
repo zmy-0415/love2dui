@@ -21,7 +21,7 @@
 
 ## 🚀 快速开始
 
-需要 [LÖVE 11.x](https://love2d.org/)。
+需要 [LÖVE](https://love2d.org/) 11.x 或 12.x（本机构建为 12.0，版本声明见 `conf.lua` 的 `t.version`）。
 
 ```bash
 # 运行演示
@@ -29,6 +29,16 @@ love .
 ```
 
 `main.lua` 是一个自包含的演示，覆盖全部控件，交互结果输出到控制台并以 Toast 提示。
+
+### Windows 启动脚本
+
+三个批处理脚本默认使用 `C:\workspace\love2dsrc\build` 中的 LÖVE 可执行文件：
+
+- `run.bat` —— 用 `love.exe` 正常启动演示
+- `debug.bat` —— 用 `lovec.exe` 启动，可在控制台看到 `print` 输出
+- `test.bat` —— 自动创建 `verify.flag` 运行自检，输出 `[PASS]` / `[FAIL]` 后暂停
+
+如果 LÖVE 构建目录不同，修改脚本开头的 `LOVE_DIR`，或用同名环境变量覆盖，例如 `set LOVE_DIR=D:\love2d\build`。脚本会自动切换到自身所在目录，从任意位置调用都能正确加载项目。
 
 ### 最小示例
 

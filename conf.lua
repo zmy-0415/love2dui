@@ -1,6 +1,7 @@
 function love.conf(t)
     t.identity = "lumiui"
-    t.version = "11.5"
+    -- 目标 LÖVE 版本；本机构建为 12.0，设为一致可避免启动时的兼容性警告
+    t.version = "12.0"
 
     t.window.title = "LumiUI 演示"
     t.window.width = 1280
