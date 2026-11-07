@@ -2,6 +2,30 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
 
+## 0.3.0 — 2026-11-08
+
+示例与文档版本：把 500 行的单一入口拆成可按需运行的示例，并补上示例级回归。
+
+### 新增
+
+- **示例目录 `examples/`** —— `main.lua` 变成启动器，`love . <name>` 选择示例：
+  `showcase`（默认）/ `minimal` / `layout` / `forms` / `editor` / `data` / `theme`
+- **`examples/boot.lua`** —— 示例公共外壳：窗口标题、事件转发、F1 主题切换、F2 调试面板、`ctx.feedback`
+- **`tests/selfcheck.lua`** —— 把原先写在 `main.lua` 里的集成自检抽出，改为对"当前示例"跑界面级回归
+- **`tests/examples.lua`** —— 逐个构建示例并完成建树 / 布局 / 两帧绘制，纯 Lua 可跑
+- **`tests/fake_backend.lua`** —— 抽出可复用的记录型后端，`headless.lua` 与 `examples.lua` 共用
+- **启动脚本支持示例名** —— `run.bat editor` / `debug.bat layout`
+
+### 变更
+
+- `main.lua` 从 501 行缩减为启动器（参数解析 + verify 模式）
+- `tests/headless.lua` 改用共享的假后端，断言数量不变
+
+### 测试
+
+- 示例冒烟 49 条（7 个示例 × 7 项）
+- 完整套件 266 条、headless 11 条保持全绿
+
 ## 0.2.0 — 2026-11-08
 
 架构与正确性版本：收敛后端依赖、补齐失效入口，并修掉一批交互缺陷。

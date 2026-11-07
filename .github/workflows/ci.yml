@@ -19,7 +19,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y luajit lua5.1 lua5.4
       - name: Headless smoke tests (${{ matrix.lua }})
-        run: ${{ matrix.lua }} tests/headless.lua
+        run: |
+          ${{ matrix.lua }} tests/headless.lua
+          ${{ matrix.lua }} tests/examples.lua
 
   # 真实图形环境下的完整测试套件（xvfb + 软件渲染）
   love-suite:
@@ -47,4 +49,4 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y luacheck || sudo apt-get install -y lua-check
       - name: Lint framework
-        run: luacheck lumi tests demo main.lua
+        run: luacheck lumi tests demo examples main.lua

@@ -1,7 +1,7 @@
 --[[
     headless.lua —— 无 LÖVE 环境的冒烟测试
 
-    作用：证明框架不再依赖全局 `love`。注入一个纯 Lua 后端即可构建界面、
+    作用：证明框架不依赖全局 `love`。注入一个纯 Lua 后端即可构建界面、
     跑事件、绘制，因此核心逻辑可以在 CI（或任何装了 Lua 的机器）上验证。
 
     用法（项目根目录）：
@@ -15,66 +15,7 @@ local script = (arg and arg[0]) or "tests/headless.lua"
 local dir = script:match("^(.*)[/\\][^/\\]+$") or "."
 package.path = dir .. "/../?.lua;" .. dir .. "/../?/init.lua;" .. package.path
 
--- ---------------- 记录型后端 ----------------
-
-local calls = {}
-local function rec(name)
-    calls[name] = (calls[name] or 0) + 1
-end
-
-local G = {}
-for _, name in ipairs({
-    "setColor", "setFont", "setLineWidth", "setLineJoin", "setLineStyle",
-    "setScissor", "setStencilTest", "clear", "print", "printf", "rectangle",
-    "circle", "arc", "line", "polygon", "points", "push", "pop", "origin",
-    "translate", "rotate", "scale", "setCanvas", "draw",
-}) do
-    G[name] = function(...) rec(name) end
-end
-
-G.getWidth = function() return 800 end
-G.getHeight = function() return 600 end
-G.getScissor = function() return 0, 0, 800, 600 end
-G.stencil = function(fn) rec("stencil"); if fn then fn() end end
-
-G.newFont = function()
-    return {
-        getWidth = function(_, s) return #tostring(s) * 7 end,
-        getWrap = function(_, s) return 1000, { tostring(s) } end,
-        getHeight = function() return 16 end,
-        setFilter = function() end,
-    }
-end
-
-G.newCanvas = function(w, h)
-    return {
-        getWidth = function() return w end,
-        getHeight = function() return h end,
-        getDimensions = function() return w, h end,
-        setFilter = function() end,
-        release = function() end,
-        draw = function() end,
-        typeOf = function() return "Canvas" end,
-    }
-end
-
-local clipboard = ""
-local clock = 100
-local keysDown = {}
-
-local backend = {
-    graphics = G,
-    keyboard = {
-        isDown = function(k) return keysDown[k] == true end,
-        setTextInput = function() rec("setTextInput") end,
-    },
-    system = {
-        getClipboardText = function() return clipboard end,
-        setClipboardText = function(t) clipboard = t end,
-    },
-    timer = { getTime = function() return clock end },
-    filesystem = { newFileData = function() error("no filesystem") end },
-}
+local newBackend = dofile(dir .. "/fake_backend.lua")
 
 -- ---------------- 断言 ----------------
 
@@ -96,6 +37,8 @@ ok("环境中没有全局 love", rawget(_G, "love") == nil)
 
 local lumi = require("lumi")
 local platform = require("lumi.platform")
+
+local backend, calls, state = newBackend({ width = 400, height = 300 })
 
 local clicked = 0
 local ui = lumi.new({ backend = backend, width = 400, height = 300 })
@@ -135,7 +78,7 @@ ok("文本输入写入控件", inp._text == "你好")
 inp.cursor = #inp._text
 inp._selAnchor = 0
 inp:copy()
-ok("复制走注入后端剪贴板", clipboard == "你好")
+ok("复制走注入后端剪贴板", state.clipboard == "你好")
 
 inp:setText("")
 inp:paste()

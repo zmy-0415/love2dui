@@ -25,18 +25,41 @@
 需要 [LÖVE](https://love2d.org/) 11.x 或 12.x（本机构建为 12.0，版本声明见 `conf.lua` 的 `t.version`）。
 
 ```bash
-# 运行演示
-love .
+love .              # 完整展示（默认，覆盖全部控件）
+love . minimal      # 最小应用，约 30 行
+love . layout       # Flex / Grid / 绝对定位 / 响应式
+love . forms        # 表单控件
+love . editor       # 多行编辑器（高亮 / 撤销 / 查找替换）
+love . data         # 表格 / 树 / 轮播
+love . theme        # 主题与视觉定制
 ```
 
-`main.lua` 是一个自包含的演示，覆盖全部控件，交互结果输出到控制台并以 Toast 提示。
+`main.lua` 只是启动器，具体界面在 `examples/` 下，每个文件都是一个完整可运行的示例。
+完整展示里所有交互结果都会打印到控制台，并以 Toast 提示。
+
+F1 切换深/浅主题，F2 打开调试面板（FPS 与节点数），这两个快捷键在所有示例里都可用。
+
+### 示例一览
+
+| 示例 | 文件 | 内容 |
+|---|---|---|
+| `showcase` | `examples/showcase.lua` | 全部控件的集中展示（默认） |
+| `minimal` | `examples/minimal.lua` | 直接创建节点 + `setProps` 更新状态 |
+| `layout` | `examples/layout.lua` | 行列 / gap / grow / 百分比 / 换行 / Grid / 绝对定位 / 响应式断点 |
+| `forms` | `examples/forms.lua` | 按钮、输入框、选择控件、滑块、进度、下拉、标签页 |
+| `editor` | `examples/editor.lua` | 语法高亮、行号、撤销重做、查找替换 |
+| `data` | `examples/data.lua` | 2000 行表格虚拟化、树、轮播、头像 |
+| `theme` | `examples/theme.lua` | 色板 / 字号阶梯 / 圆角与控件尺寸定制 |
+
+公共外壳在 `examples/boot.lua`，负责窗口标题、事件转发与全局快捷键。
+新增示例只需导出一张 `{ title, build(ui, ctx) }` 表，并把名字加进 `main.lua` 的 `EXAMPLES` 列表。
 
 ### Windows 启动脚本
 
 三个批处理脚本默认使用 `C:\workspace\love2dsrc\build` 中的 LÖVE 可执行文件：
 
-- `run.bat` —— 用 `love.exe` 正常启动演示
-- `debug.bat` —— 用 `lovec.exe` 启动，可在控制台看到 `print` 输出
+- `run.bat` —— 用 `love.exe` 正常启动，可带示例名：`run.bat editor`
+- `debug.bat` —— 用 `lovec.exe` 启动，可在控制台看到 `print` 输出（同样支持 `debug.bat layout`）
 - `test.bat` —— 自动创建 `verify.flag` 运行自检，输出 `[PASS]` / `[FAIL]` 后暂停
 
 如果 LÖVE 构建目录不同，修改脚本开头的 `LOVE_DIR`，或用同名环境变量覆盖，例如 `set LOVE_DIR=D:\love2d\build`。脚本会自动切换到自身所在目录，从任意位置调用都能正确加载项目。
@@ -107,10 +130,20 @@ function love.resize(w, h) ui:resize(w, h) end
 
 ```
 .
-├── main.lua                 # 演示入口（覆盖全部控件）
+├── main.lua                 # 启动器：love . [example]
 ├── conf.lua                 # 窗口配置
+├── examples/                # 可独立运行的示例
+│   ├── boot.lua             # 公共外壳（窗口 / 事件转发 / F1·F2）
+│   ├── showcase.lua         # 完整展示（默认）
+│   ├── minimal.lua
+│   ├── layout.lua
+│   ├── forms.lua
+│   ├── editor.lua
+│   ├── data.lua
+│   └── theme.lua
 ├── lumi/                    # 框架源码
 │   ├── init.lua             # 入口：lumi.new() / lumi.register()
+│   ├── platform.lua         # 后端适配层（唯一接触 love 的地方）
 │   ├── context.lua          # 场景调度器（事件路由 / 悬浮层 / 焦点）
 │   ├── node.lua             # 节点基类（树 / 布局 / 绘制 / 命中测试）
 │   ├── widget.lua           # Widget 基类（回调触发）
@@ -124,7 +157,7 @@ function love.resize(w, h) ui:resize(w, h) end
 │   ├── widgets/             # 全部内置控件
 │   └── docs/                # 文档与截图
 ├── demo/                    # 自定义控件示例（星级评分）
-└── tests/                   # 无头自检测试套件
+└── tests/                   # 测试：套件 / 自检 / 无头冒烟
 ```
 
 ## 🧪 测试
@@ -140,19 +173,24 @@ love .          # 或控制台版 lovec .
 LUMI_VERIFY=1 love .
 ```
 
-输出形如 `[TEST] 266 total, 266 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，某组抛异常只记一条失败，不会中断其余用例。
+自检会先构建当前示例跑一遍界面级回归（弹窗命中 / UTF-8 光标 / IME / 剪贴板 / 百分比布局 /
+z-index / 主题切换 / 调试面板），再执行完整测试套件，输出形如
+`[TEST] 266 total, 266 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，
+某组抛异常只记一条失败，不会中断其余用例。
 
 另有不需要 LÖVE 的冒烟测试（注入假后端，纯 Lua 即可跑，适合 CI）：
 
 ```bash
 luajit tests/headless.lua     # 或 lua5.4 tests/headless.lua
+luajit tests/examples.lua     # 每个示例：建树 → 布局 → 两帧绘制
 ```
 
-输出 `[HEADLESS] 11 total, 11 passed, 0 failed`。它验证框架在没有全局 `love` 时仍能建树、
-布局、绘制、处理事件，并用假时钟复现光标闪烁。
+`headless.lua` 输出 `[HEADLESS] 11 total, 11 passed, 0 failed`，验证框架在没有全局 `love` 时
+仍能建树、布局、绘制、处理事件，并用假时钟复现光标闪烁；`examples.lua` 逐个构建
+`examples/` 下的示例，防止 API 变更后示例静默失效。
 
-CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 的 headless 冒烟、xvfb + 软件渲染下的
-完整套件、`luacheck` 静态检查。
+CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 的 headless + examples 冒烟、
+xvfb + 软件渲染下的完整套件、`luacheck` 静态检查。
 
 ## 📦 打包发布
 
@@ -161,7 +199,7 @@ CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 的 headless 冒�
 powershell -ExecutionPolicy Bypass -File tools\pack.ps1
 
 # 其它平台：等价的 zip（main.lua 必须在包根目录）
-zip -r lumiui.love main.lua conf.lua README.md lumi demo tests -x "*.DS_Store"
+zip -r lumiui.love main.lua conf.lua README.md CHANGELOG.md examples lumi demo tests -x "*.DS_Store"
 ```
 
 版本号只在 `lumi/init.lua` 的 `lumi.version` 维护，打包脚本与 CHANGELOG 与之对齐。

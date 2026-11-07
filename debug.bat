@@ -8,4 +8,4 @@ if not exist "%LOVE_DIR%\lovec.exe" (
     pause
     exit /b 1
 )
-"%LOVE_DIR%\lovec.exe" .
+"%LOVE_DIR%\lovec.exe" . %*

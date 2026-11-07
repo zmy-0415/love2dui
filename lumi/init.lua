@@ -7,7 +7,7 @@ local platform = require("lumi.platform")
 
 local lumi = {}
 
-lumi.version = "0.2.0"
+lumi.version = "0.3.0"
 
 --- 创建场景
 --  @param opts table 可选：{ backend = <表>, width = <数>, height = <数> }

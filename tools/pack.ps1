@@ -42,7 +42,7 @@ try {
     if (Test-Path $out) { Remove-Item $out -Force }
 
     $items = @()
-    foreach ($i in @("main.lua", "conf.lua", "README.md", "lumi", "demo", "tests")) {
+    foreach ($i in @("main.lua", "conf.lua", "README.md", "CHANGELOG.md", "examples", "lumi", "demo", "tests")) {
         if (Test-Path $i) { $items += $i }
     }
 

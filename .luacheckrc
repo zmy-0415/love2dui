@@ -1,5 +1,5 @@
 -- luacheck 配置（https://github.com/lunarmodules/luacheck）
--- 用法：luacheck lumi tests demo main.lua
+-- 用法：luacheck lumi tests demo examples main.lua
 std = "lua51"
 globals = { "love" }
 
