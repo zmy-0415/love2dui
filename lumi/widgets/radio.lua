@@ -3,6 +3,7 @@
     支持 group 分组互斥，onChanged(checked)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -70,15 +71,15 @@ function Radio:drawContent()
     local cyb = by + size / 2
 
     draw.setColor(self.state.hovered and theme.color("surface") or theme.color("surface2"))
-    love.graphics.circle("fill", cxb, cyb, size / 2)
+    platform.graphics.circle("fill", cxb, cyb, size / 2)
 
-    love.graphics.setLineWidth(2)
+    platform.graphics.setLineWidth(2)
     draw.setColor(self.checked and base or theme.color("border"))
-    love.graphics.circle("line", cxb, cyb, size / 2 - 1)
+    platform.graphics.circle("line", cxb, cyb, size / 2 - 1)
 
     if self._anim > 0 then
         draw.setColor({ base[1], base[2], base[3], self._anim })
-        love.graphics.circle("fill", cxb, cyb, (size / 2 - 4) * self._anim)
+        platform.graphics.circle("fill", cxb, cyb, (size / 2 - 4) * self._anim)
     end
 
     if p.label then

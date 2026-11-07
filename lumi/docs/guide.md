@@ -158,6 +158,38 @@ end)
 | `disabled` | boolean | 禁用（不可交互、显示禁用态） |
 | `tooltip` | string | 悬停 0.5 秒后显示提示气泡 |
 
+### 运行时修改属性
+
+属性变化要用 `setProps` / `setProp`，不要直接写 `node.props.xxx` —— 直接改属性不会：
+清空布局/绘制缓存、同步 `visible` 与 `disabled` 的影子状态（`self.visible`、
+`state.disabled`）、让父节点的 z 排序缓存失效。
+
+```lua
+btn:setProps({ text = "已保存", disabled = true })   -- 支持批量
+label:setProp("text", "更新后的文案")                 -- 单个，均返回 self 可链式
+```
+
+失效范围按属性自动选择：
+
+| 属性类别 | 举例 | 后果 |
+|---|---|---|
+| 布局相关 | `w/h`、`padding`、`gap`、`text` | 清空测量缓存 + 标记场景重排 |
+| 仅外观 | `bg`、`border`、`elevation`、`radius`、`color` | 只丢弃 Canvas 缓存，不重排 |
+| 层级/显隐/禁用 | `z`、`visible`、`disabled` | 同步影子状态，按需失效 |
+
+删除白名单之外的属性一律按"影响布局"处理：宁可多一次重排，也不会留下陈旧布局。
+
+需要自定义反应时覆写钩子（变更键已按字母序排好）：
+
+```lua
+function MyWidget:onPropsChanged(changed)
+    for _, k in ipairs(changed) do
+        if k == "items" then self:_rebuild(); break end
+    end
+end
+```
+
+
 ```lua
 ui:root({ direction = "column", gap = 8 })
   :box({
@@ -1084,6 +1116,53 @@ function love.keypressed(k)
 end
 function love.update(dt) ui:update(dt); lumi.debug.update(dt) end
 function love.draw() ui:draw(); lumi.debug.draw(ui) end
+```
+
+---
+
+## 后端与可测试性
+
+框架内部所有 LÖVE 调用都收敛在 `lumi/platform.lua`，其余模块不直接接触全局 `love`。
+这意味着可以换掉后端（做纯 Lua 单测、录制绘制调用、移植到其它运行时）。
+
+### 注入后端
+
+```lua
+local lumi = require("lumi")
+local platform = require("lumi.platform")
+
+-- 方式一：创建场景时注入（只需提供用到的子表，缺的走空实现）
+local ui = lumi.new({ backend = myBackend })
+
+-- 方式二：随时替换
+platform.install(myBackend)     -- myBackend 形状与 love 一致即可
+platform.install()              -- 传空 = 重新探测全局 love
+```
+
+后端表里的 `graphics` 必须是完整的图形接口（绘制原语直接转发，不做包装）；其余子表可缺省。
+
+### 语义接口
+
+`platform` 还提供一组"与 LÖVE 签名不同、便于替换"的语义函数：
+
+| 函数 | 说明 |
+|---|---|
+| `platform.now()` | 当前时间（秒），动画、光标闪烁、Toast 计时都用它 |
+| `platform.isDown(key)` | 按键是否按下（Shift/Ctrl 判断） |
+| `platform.setTextInput(on, x, y, w, h)` | 开关 IME，带矩形时在光标处弹候选框 |
+| `platform.clipboardGet()` / `platform.clipboardSet(text)` | 剪贴板 |
+| `platform.windowSize()` | 窗口宽高 |
+| `platform.newFont(size)` / `platform.newFontFromData(data, size)` | 字体 |
+| `platform.newCanvas(w, h)` / `platform.newImage(path)` | 画布 / 图片（后者失败返回 nil） |
+
+### 假时钟
+
+动画与光标闪烁依赖真实时间，不便复现。测试里可以冻结时钟：
+
+```lua
+platform.freezeTime(10)      -- 定位到第 10 秒
+platform.advance(0.6)        -- 推进到 10.6 秒（光标闪烁刚好翻转）
+platform.resumeTime()        -- 回到真实时间
 ```
 
 ---

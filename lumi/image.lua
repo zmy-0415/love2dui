@@ -4,6 +4,7 @@
     用法：local res = require("lumi.image"); res.load("assets/a.png")
 ]]
 
+local platform = require("lumi.platform")
 local draw = require("lumi.draw")
 
 local res = {}
@@ -18,7 +19,7 @@ local function isDrawable(v)
 end
 
 -- 加载图片（带缓存），失败返回 nil（不抛错）：
--- src 为路径字符串 → love.graphics.newImage；可绘制对象 → 原样返回；function → 调用取结果
+-- src 为路径字符串 → platform.newImage；可绘制对象 → 原样返回；function → 调用取结果
 function res.load(src)
     if src == nil then return nil end
     if isDrawable(src) then return src end
@@ -32,8 +33,7 @@ function res.load(src)
     if hit ~= nil then
         return hit or nil
     end
-    local ok, img = pcall(love.graphics.newImage, src)
-    cache[src] = ok and img or false
+    cache[src] = platform.newImage(src) or false
     return cache[src] or nil
 end
 
@@ -56,9 +56,9 @@ function res.placeholder(key, w, h, from, to, label)
     from = from or { 0.30, 0.42, 0.85 }
     to = to or { 0.58, 0.26, 0.66 }
 
-    local cv = love.graphics.newCanvas(w, h)
-    love.graphics.push("all")
-    love.graphics.setCanvas(cv)
+    local cv = platform.newCanvas(w, h)
+    platform.graphics.push("all")
+    platform.graphics.setCanvas(cv)
     -- 对角线渐变：按 (x+y) 比例插值
     local diag = w + h - 2
     for x = 0, w - 1 do
@@ -69,20 +69,20 @@ function res.placeholder(key, w, h, from, to, label)
                 from[2] + (to[2] - from[2]) * t,
                 from[3] + (to[3] - from[3]) * t,
                 1)
-            love.graphics.line(x, y, x, y + 4)
+            platform.graphics.line(x, y, x, y + 4)
         end
     end
     -- 装饰圆（低透明度，增加层次）
     draw.setColor(1, 1, 1, 0.10)
-    love.graphics.circle("fill", w * 0.72, h * 0.32, math.min(w, h) * 0.28)
+    platform.graphics.circle("fill", w * 0.72, h * 0.32, math.min(w, h) * 0.28)
     draw.setColor(0, 0, 0, 0.10)
-    love.graphics.circle("fill", w * 0.25, h * 0.78, math.min(w, h) * 0.22)
+    platform.graphics.circle("fill", w * 0.25, h * 0.78, math.min(w, h) * 0.22)
     if label then
         draw.setColor(1, 1, 1, 0.85)
-        love.graphics.print(label, 10, 8)
+        platform.graphics.print(label, 10, 8)
     end
-    love.graphics.setCanvas()
-    love.graphics.pop()
+    platform.graphics.setCanvas()
+    platform.graphics.pop()
     draw.resetState()   -- pop 恢复了渲染状态，缓存作废
 
     phCache[key] = cv

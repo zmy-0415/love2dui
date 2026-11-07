@@ -5,6 +5,7 @@
     用法：ui:avatar({ src = "a.png", size = 44, badge = 3, onClick = function() end })
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -84,9 +85,9 @@ function Avatar:drawContent()
 
     -- hover 光环（可点击时）
     if self:isInteractive() and self.state.hovered then
-        love.graphics.setLineWidth(2.5)
+        platform.graphics.setLineWidth(2.5)
         draw.setColor(theme.alpha("primary", 0.55))
-        love.graphics.circle("line", cx, cy, r + 3)
+        platform.graphics.circle("line", cx, cy, r + 3)
     end
 
     if img then
@@ -95,13 +96,13 @@ function Avatar:drawContent()
         local dw, dh = iw * s, ih * s
         draw.inCircle(cx, cy, r, function()
             draw.setColor(1, 1, 1)
-            love.graphics.draw(img, cx - dw / 2, cy - dh / 2, 0, s, s)
+            platform.graphics.draw(img, cx - dw / 2, cy - dh / 2, 0, s, s)
         end)
     else
         -- 文字回退
         draw.inCircle(cx, cy, r, function()
             draw.setColor(self:getBgColor())
-            love.graphics.circle("fill", cx, cy, r)
+            platform.graphics.circle("fill", cx, cy, r)
         end)
         local text = self:getFallbackText()
         if text ~= "" then
@@ -115,7 +116,7 @@ function Avatar:drawContent()
     local badge = p.badge
     if badge == true then
         draw.setColor(theme.color("error"))
-        love.graphics.circle("fill", self.x + size - 5, self.y + 5, 4.5)
+        platform.graphics.circle("fill", self.x + size - 5, self.y + 5, 4.5)
     elseif badge and tonumber(badge) then
         local n = math.floor(tonumber(badge))
         if n > 0 then
@@ -134,9 +135,9 @@ function Avatar:drawContent()
 
     -- 键盘焦点环
     if self.state.focused then
-        love.graphics.setLineWidth(2)
+        platform.graphics.setLineWidth(2)
         draw.setColor(theme.alpha("primary", 0.6))
-        love.graphics.circle("line", cx, cy, r + 2)
+        platform.graphics.circle("line", cx, cy, r + 2)
     end
 end
 

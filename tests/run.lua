@@ -32,6 +32,7 @@ local res = require("lumi.image")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
+local platform = require("lumi.platform")
 local Rating = require("demo.rating")
 
 local M = {}
@@ -1063,6 +1064,143 @@ local function testTheme()
     check("恢复默认主题", theme.current.mode == "dark")
 end
 
+-- ---------------- 后端注入 ----------------
+
+local function testPlatform()
+    local bak = platform.backend()
+    local now, clipboard, keys, textInput = 100, "", {}, nil
+
+    local backend = {
+        graphics = bak.graphics,
+        keyboard = {
+            isDown = function(k) return keys[k] == true end,
+            setTextInput = function(on, x, y, w, h)
+                textInput = { on = on, x = x, y = y, w = w, h = h }
+            end,
+        },
+        system = {
+            getClipboardText = function() return clipboard end,
+            setClipboardText = function(t) clipboard = t end,
+        },
+        timer = { getTime = function() return now end },
+    }
+
+    platform.install(backend)
+    eq("platform 注入后读取后端时钟", platform.now(), 100)
+    eq("platform windowSize 转发后端", select(1, platform.windowSize()), bak.graphics.getWidth())
+
+    keys.lshift = true
+    check("platform isDown 转发后端", platform.isDown("lshift") == true)
+    check("platform isDown 未按下的键为 false", platform.isDown("lctrl") == false)
+
+    platform.clipboardSet("剪贴板内容")
+    eq("platform 剪贴板往返", platform.clipboardGet(), "剪贴板内容")
+
+    platform.setTextInput(true, 10, 20, 30, 40)
+    check("platform 文本输入带矩形", textInput and textInput.on == true and textInput.w == 30)
+    platform.setTextInput(false)
+    check("platform 关闭文本输入", textInput and textInput.on == false)
+
+    -- 假时钟让动画/光标闪烁可复现
+    platform.freezeTime(5)
+    eq("platform freezeTime 覆盖后端时钟", platform.now(), 5)
+    platform.advance(0.25)
+    eq("platform advance 推进假时钟", platform.now(), 5.25)
+    platform.resumeTime()
+    eq("platform resumeTime 回到真实后端时钟", platform.now(), 100)
+
+    -- 缺少后端时要报明确错误，而不是 attempt to index nil
+    platform.install({})
+    local ok, err = pcall(function() return platform.graphics.rectangle("fill", 0, 0, 1, 1) end)
+    check("platform 后端缺失时报错", not ok and tostring(err):find("platform") ~= nil)
+
+    platform.install(bak)
+    platform.resumeTime()
+    check("platform 恢复原后端", platform.now() ~= nil)
+end
+
+-- ---------------- 统一属性更新 ----------------
+
+local function testSetProps()
+    -- disabled：有影子状态（state.disabled），只改 props 不会生效
+    local b = Button.new({ text = "按钮" })
+    b:arrange(0, 0, 120, 40)
+    check("setProps 前按钮可交互", b:isInteractive())
+    b:setProps({ disabled = true })
+    check("setProps 同步 state.disabled", b.state.disabled == true and not b:isInteractive())
+    b:setProps({ disabled = false })
+    check("setProps 可恢复可交互", b:isInteractive())
+
+    -- visible：同样有影子状态（self.visible）
+    local lb = Label.new({ text = "x" })
+    lb:arrange(0, 0, 100, 20)
+    lb:setProp("visible", false)
+    check("setProp 同步 visible", lb.visible == false)
+    lb:setProp("visible", true)
+    check("setProp 恢复 visible", lb.visible == true)
+
+    -- z：需要让父节点的排序缓存失效
+    local root = Box.new({ direction = "row" })
+    local a = Label.new({ text = "a", w = 50, h = 20 })
+    local c = Label.new({ text = "b", w = 50, h = 20 })
+    root:addChild(a)
+    root:addChild(c)
+    local o1 = root:getDrawOrder()
+    check("初始绘制顺序为插入顺序", o1[1] == a and o1[2] == c)
+    c:setProp("z", 5)
+    local o2 = root:getDrawOrder()
+    check("z 变化后排序缓存失效（c 仍在后）", o2[1] == a and o2[2] == c)
+    a:setProp("z", 10)
+    local o3 = root:getDrawOrder()
+    check("z 更大者后绘制", o3[1] == c and o3[2] == a)
+
+    -- 影响尺寸的属性：清空测量缓存并标记场景布局脏
+    local lb2 = Label.new({ text = "hello" })
+    lb2:arrange(0, 0, 200, 20)
+    lb2:measure(200, 20)
+    check("measure 缓存已建立", lb2._measureCache ~= nil)
+    lb2:setProps({ text = "hello world，更长的文本内容" })
+    check("文本变化清空测量缓存", lb2._measureCache == nil)
+
+    -- 幂等：同值写入不触发任何失效
+    lb2:measure(200, 20)
+    local keep = lb2._measureCache
+    lb2:setProps({ text = lb2.props.text })
+    check("相同值不触发失效", lb2._measureCache == keep)
+
+    -- 外观属性只丢 Canvas 缓存，不重排
+    local card = Box.new({ w = 100, h = 50, bg = "surface" })
+    card:arrange(0, 0, 100, 50)
+    card:measure(100, 50)
+    card._cacheCv = {}
+    card:setProps({ bg = "primary" })
+    check("外观变化丢弃 Canvas 缓存", card._cacheCv == nil)
+    check("外观变化保留测量缓存", card._measureCache ~= nil)
+
+    -- 场景级：属性变化要触发下一帧重排
+    local sc = lumi.new({ width = 300, height = 200 })
+    local sceneRoot = Box.new({ direction = "column" })
+    sc.root = sceneRoot
+    sceneRoot._ctx = sc
+    local lb3 = Label.new({ text = "短" })
+    sceneRoot:addChild(lb3)
+    sc._layoutDirty = false
+    lb3:setProps({ text = "更长的文本" })
+    check("属性变化标记场景布局脏", sc._layoutDirty == true)
+    sc._layoutDirty = false
+    lb3:setProps({ bg = "primary" })
+    check("外观变化不置布局脏", sc._layoutDirty == false)
+
+    -- 自定义反应钩子：按字母序收到变更键
+    local seen = nil
+    local lb4 = Label.new({ text = "t" })
+    lb4.onPropsChanged = function(_, changed) seen = changed end
+    lb4:setProps({ text = "t2", bg = "primary" })
+    check("onPropsChanged 收到全部变更键",
+        seen and #seen == 2 and seen[1] == "bg" and seen[2] == "text")
+    check("setProps 可链式调用", lb4:setProps({ text = "t3" }) == lb4)
+end
+
 function M.run()
     passed, failed, failures = 0, 0, {}
 
@@ -1090,6 +1228,8 @@ function M.run()
         { "场景", testScene },
         { "交互", testInteractivity },
         { "主题", testTheme },
+        { "后端注入", testPlatform },
+        { "属性更新", testSetProps },
     }
     for _, g in ipairs(groups) do
         local ok, err = xpcall(g[2], function(e)

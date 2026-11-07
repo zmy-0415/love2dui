@@ -3,6 +3,7 @@
     支持 label、placeholder、password 掩码、光标、中文 IME 输入、onChange/onSubmit。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -16,11 +17,11 @@ local MASK = "•"        -- 掩码字符（多字节，宽度按字符计）
 local MASK_BYTES = #MASK
 
 local function isShift()
-    return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+    return platform.isDown("lshift") or platform.isDown("rshift")
 end
 
 local function isCtrl()
-    return love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")
+    return platform.isDown("lctrl") or platform.isDown("rctrl")
 end
 
 function Input.new(props)
@@ -46,14 +47,14 @@ end
 function Input:blur()
     self.state.focused = false
     self._imeText = nil
-    love.keyboard.setTextInput(false)
+    platform.setTextInput(false)
 end
 
 -- 更新系统文本输入区域，让输入法候选窗定位到本输入框（每帧调用保持位置最新）
 function Input:updateTextInput()
     if not self.state.focused or self.state.disabled then return end
     local labelH = self:getLabelHeight()
-    love.keyboard.setTextInput(true, self.x, self.y + labelH, self.w, self.h - labelH)
+    platform.setTextInput(true, self.x, self.y + labelH, self.w, self.h - labelH)
 end
 
 function Input:getText()
@@ -92,21 +93,21 @@ end
 function Input:copy()
     local a, b = self:selectionRange()
     if a and b > a then
-        love.system.setClipboardText(self._text:sub(a + 1, b))
+        platform.clipboardSet(self._text:sub(a + 1, b))
     end
 end
 
 function Input:cut()
     local a, b = self:selectionRange()
     if a and b > a then
-        love.system.setClipboardText(self._text:sub(a + 1, b))
+        platform.clipboardSet(self._text:sub(a + 1, b))
         self:deleteRange(a, b)
         self:emit("onChange", self._text)
     end
 end
 
 function Input:paste()
-    local text = love.system.getClipboardText()
+    local text = platform.clipboardGet()
     if text and #text > 0 then
         self:textinput(text, nil)
     end
@@ -320,7 +321,7 @@ function Input:drawContent()
         local preW = draw.textWidth(f, display:sub(1, selA))
         local selW = draw.textWidth(f, display:sub(selA + 1, selB))
         draw.setColor(theme.alpha("primary", 0.28))
-        love.graphics.rectangle("fill", textX + preW, textY, selW, f:getHeight())
+        platform.graphics.rectangle("fill", textX + preW, textY, selW, f:getHeight())
     end
     if #display == 0 and not imeText and p.placeholder then
         draw.text(p.placeholder, textX, textY, 0, { font = f, color = theme.color("muted") })
@@ -329,11 +330,11 @@ function Input:drawContent()
     end
 
     if self.state.focused and not self.state.disabled and not self:hasSelection() then
-        if (love.timer.getTime() % 1) < 0.55 then
+        if (platform.now() % 1) < 0.55 then
             local cursorText = display:sub(1, cursorByte) .. (imeText or "")
             local cursorX = textX + draw.textWidth(f, cursorText)
             draw.setColor(theme.color("primary"))
-            love.graphics.rectangle("fill", cursorX, textY, 1.5, f:getHeight())
+            platform.graphics.rectangle("fill", cursorX, textY, 1.5, f:getHeight())
         end
     end
     draw.popClip()
@@ -346,7 +347,7 @@ function Input:drawTextField(f, display, cursorByte, imeText, x, y, color)
     draw.setFont(f)
     if not imeText or #imeText == 0 then
         draw.setColor(color)
-        love.graphics.print(display, x, y)
+        platform.graphics.print(display, x, y)
         return
     end
     local prefix = display:sub(1, cursorByte)
@@ -355,15 +356,15 @@ function Input:drawTextField(f, display, cursorByte, imeText, x, y, color)
     local imeW = draw.textWidth(f, imeText)
 
     draw.setColor(color)
-    love.graphics.print(prefix, x, y)
+    platform.graphics.print(prefix, x, y)
 
     draw.setColor(theme.color("primary"))
-    love.graphics.print(imeText, x + prefixW, y)
-    love.graphics.setLineWidth(1.5)
-    love.graphics.line(x + prefixW, y + f:getHeight() + 1, x + prefixW + imeW, y + f:getHeight() + 1)
+    platform.graphics.print(imeText, x + prefixW, y)
+    platform.graphics.setLineWidth(1.5)
+    platform.graphics.line(x + prefixW, y + f:getHeight() + 1, x + prefixW + imeW, y + f:getHeight() + 1)
 
     draw.setColor(color)
-    love.graphics.print(suffix, x + prefixW + imeW, y)
+    platform.graphics.print(suffix, x + prefixW + imeW, y)
 end
 
 return Input

@@ -5,6 +5,7 @@
     未知图标名安全降级为方块占位。
 ]]
 
+local platform = require("lumi.platform")
 local draw = require("lumi.draw")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
@@ -225,34 +226,34 @@ end
 local WHITE = { 1, 1, 1, 1 }
 
 local ICON_GFX = {
-    line = function(...) love.graphics.line(...) end,
-    rect = function(rx, ry, rw, rh) love.graphics.rectangle("line", rx, ry, rw, rh) end,
-    circle = function(cx, cy, r) love.graphics.circle("line", cx, cy, r) end,
-    arc = function(cx, cy, r, a1, a2) love.graphics.arc("line", "open", cx, cy, r, a1, a2) end,
-    poly = function(pts) love.graphics.polygon("line", pts) end,
-    fillPoly = function(pts) love.graphics.polygon("fill", pts) end,
-    fillCircle = function(cx, cy, r) love.graphics.circle("fill", cx, cy, r) end,
+    line = function(...) platform.graphics.line(...) end,
+    rect = function(rx, ry, rw, rh) platform.graphics.rectangle("line", rx, ry, rw, rh) end,
+    circle = function(cx, cy, r) platform.graphics.circle("line", cx, cy, r) end,
+    arc = function(cx, cy, r, a1, a2) platform.graphics.arc("line", "open", cx, cy, r, a1, a2) end,
+    poly = function(pts) platform.graphics.polygon("line", pts) end,
+    fillPoly = function(pts) platform.graphics.polygon("fill", pts) end,
+    fillCircle = function(cx, cy, r) platform.graphics.circle("fill", cx, cy, r) end,
 }
 
 -- 静态绘制：在 (x,y) 绘制 size 大小的图标（供其他控件复用）
 function Icon.drawIcon(name, x, y, size, color)
     local fn = icons[name]
-    love.graphics.push()
-    love.graphics.translate(x, y)
-    love.graphics.scale(size / 24, size / 24)
-    love.graphics.setLineWidth(2)
-    love.graphics.setLineJoin("miter")
-    love.graphics.setLineStyle("smooth")
+    platform.graphics.push()
+    platform.graphics.translate(x, y)
+    platform.graphics.scale(size / 24, size / 24)
+    platform.graphics.setLineWidth(2)
+    platform.graphics.setLineJoin("miter")
+    platform.graphics.setLineStyle("smooth")
     draw.setColor(color or WHITE)
     if fn then
         fn(ICON_GFX)
     else
         -- 未知图标：虚线方块占位
-        love.graphics.setLineWidth(1.5)
-        love.graphics.rectangle("line", 4, 4, 16, 16)
-        love.graphics.line(4, 4, 20, 20)
+        platform.graphics.setLineWidth(1.5)
+        platform.graphics.rectangle("line", 4, 4, 16, 16)
+        platform.graphics.line(4, 4, 20, 20)
     end
-    love.graphics.pop()
+    platform.graphics.pop()
     draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 

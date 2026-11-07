@@ -10,6 +10,7 @@
       - 软换行（word wrap）：渲染已按「可见行」循环，未来可在此引入视觉行迭代
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -19,11 +20,11 @@ local Editor = setmetatable({}, { __index = Widget })
 Editor.__index = Editor
 
 local function isShift()
-    return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+    return platform.isDown("lshift") or platform.isDown("rshift")
 end
 
 local function isCtrl()
-    return love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")
+    return platform.isDown("lctrl") or platform.isDown("rctrl")
 end
 
 local function inRect(x, y, rx, ry, rw, rh)
@@ -201,20 +202,20 @@ end
 function Editor:copy()
     local a, b = self:selectionRange()
     if a and b > a then
-        love.system.setClipboardText(self._text:sub(a + 1, b))
+        platform.clipboardSet(self._text:sub(a + 1, b))
     end
 end
 
 function Editor:cut()
     local a, b = self:selectionRange()
     if a and b > a then
-        love.system.setClipboardText(self._text:sub(a + 1, b))
+        platform.clipboardSet(self._text:sub(a + 1, b))
         self:_replace(a, b, "")
     end
 end
 
 function Editor:paste()
-    local text = love.system.getClipboardText()
+    local text = platform.clipboardGet()
     if text and #text > 0 then
         self:textinput(text, nil)
     end
@@ -633,13 +634,13 @@ end
 function Editor:blur()
     self.state.focused = false
     self._imeText = nil
-    love.keyboard.setTextInput(false)
+    platform.setTextInput(false)
 end
 
 -- 更新系统文本输入区域，让输入法候选窗定位到本编辑器（每帧调用保持位置最新）
 function Editor:updateTextInput()
     if not self.state.focused or self.state.disabled then return end
-    love.keyboard.setTextInput(true, self.x, self.y, self.w, self.h)
+    platform.setTextInput(true, self.x, self.y, self.w, self.h)
 end
 
 -- ---------------- 事件 ----------------
@@ -810,7 +811,7 @@ function Editor:renderLine(fontObj, lineText, lineIdx, x, y, color)
         end
     end
     draw.setColor(color)
-    love.graphics.print(lineText, x, y)
+    platform.graphics.print(lineText, x, y)
 end
 
 -- 按分段着色绘制一行（segs: {{from=字节, to=字节, color=色名/颜色表}, ...}，0-based 半开）
@@ -825,16 +826,16 @@ function Editor:renderHighlighted(fontObj, lineText, x, y, color, segs)
         if to > from then
             if from > last then
                 draw.setColor(color)
-                love.graphics.print(lineText:sub(last + 1, from), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
+                platform.graphics.print(lineText:sub(last + 1, from), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
             end
             draw.setColor(self:resolveColor(s.color) or color)
-            love.graphics.print(lineText:sub(from + 1, to), x + draw.textWidth(fontObj, lineText:sub(1, from)), y)
+            platform.graphics.print(lineText:sub(from + 1, to), x + draw.textWidth(fontObj, lineText:sub(1, from)), y)
             last = to
         end
     end
     if last < #lineText then
         draw.setColor(color)
-        love.graphics.print(lineText:sub(last + 1), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
+        platform.graphics.print(lineText:sub(last + 1), x + draw.textWidth(fontObj, lineText:sub(1, last)), y)
     end
 end
 
@@ -844,14 +845,14 @@ function Editor:drawLineNumbers(firstRow, lastRow, ty, viewH)
     local cf = font.get(theme.font.caption)
     local lh = self:lineHeight()
     draw.setColor(theme.color("border"))
-    love.graphics.rectangle("fill", self.x + self:padding() + gutter - 5, ty, 1, viewH)
+    platform.graphics.rectangle("fill", self.x + self:padding() + gutter - 5, ty, 1, viewH)
     for row = firstRow, lastRow do
         local rowY = ty + (row - 1) * lh - self.scrollY
         local num = tostring(row)
         local nx = self.x + self:padding() + gutter - 5 - 8 - draw.textWidth(cf, num)
         draw.setFont(cf)
         draw.setColor(theme.color("muted"))
-        love.graphics.print(num, nx, rowY + (lh - cf:getHeight()) / 2)
+        platform.graphics.print(num, nx, rowY + (lh - cf:getHeight()) / 2)
     end
 end
 
@@ -906,7 +907,7 @@ function Editor:drawContent()
                 local x0 = textX + draw.textWidth(f, self._text:sub(ls + 1, a))
                 local x1 = textX + draw.textWidth(f, self._text:sub(ls + 1, b))
                 draw.setColor(theme.alpha("primary", 0.28))
-                love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
+                platform.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
             end
         end
 
@@ -919,7 +920,7 @@ function Editor:drawContent()
                     local x0 = textX + draw.textWidth(f, self._text:sub(ls + 1, a))
                     local x1 = textX + draw.textWidth(f, self._text:sub(ls + 1, b))
                     draw.setColor(theme.alpha("warning", 0.32))
-                    love.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
+                    platform.graphics.rectangle("fill", x0, rowY, x1 - x0, lh)
                 end
             end
         end
@@ -939,19 +940,19 @@ function Editor:drawContent()
         local py = ty + (row - 1) * lh - self.scrollY
         draw.setFont(f)
         draw.setColor(theme.color("primary"))
-        love.graphics.print(self._imeText, px, py)
-        love.graphics.setLineWidth(1.5)
-        love.graphics.line(px, py + f:getHeight() + 1, px + draw.textWidth(f, self._imeText), py + f:getHeight() + 1)
+        platform.graphics.print(self._imeText, px, py)
+        platform.graphics.setLineWidth(1.5)
+        platform.graphics.line(px, py + f:getHeight() + 1, px + draw.textWidth(f, self._imeText), py + f:getHeight() + 1)
     end
 
     -- 光标
     if self.state.focused and not self.state.disabled and not self:hasSelection() then
-        if (love.timer.getTime() % 1) < 0.55 then
+        if (platform.now() % 1) < 0.55 then
             local row = self:offsetToRowCol(self.cursor)
             local cx = tx + draw.textWidth(f, self._text:sub(self:lineStart(row) + 1, self.cursor)) - self.scrollX
             local cy = ty + (row - 1) * lh - self.scrollY
             draw.setColor(theme.color("primary"))
-            love.graphics.rectangle("fill", cx, cy, 1.5, lh)
+            platform.graphics.rectangle("fill", cx, cy, 1.5, lh)
         end
     end
 

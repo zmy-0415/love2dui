@@ -3,6 +3,7 @@
     mode: linear（线性）/ circular（环形），value 0..max（默认 1）。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -56,11 +57,11 @@ function Progress:drawContent()
         local cx = self.x + self.w / 2
         local cy = self.y + self.h / 2
         local r = math.min(self.w, self.h) / 2 - thickness / 2 - 1
-        love.graphics.setLineWidth(thickness)
+        platform.graphics.setLineWidth(thickness)
         draw.setColor(theme.color("surface2"))
-        love.graphics.arc("line", "open", cx, cy, r, 0, math.pi * 2)
+        platform.graphics.arc("line", "open", cx, cy, r, 0, math.pi * 2)
         draw.setColor(base)
-        love.graphics.arc("line", "open", cx, cy, r, -math.pi / 2, -math.pi / 2 + math.pi * 2 * frac)
+        platform.graphics.arc("line", "open", cx, cy, r, -math.pi / 2, -math.pi / 2 + math.pi * 2 * frac)
         if p.showValue then
             local f = font.get(theme.font.caption)
             local text = math.floor(frac * 100 + 0.5) .. "%"

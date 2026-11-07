@@ -3,6 +3,7 @@
     圆角矩形 / 阴影 / 文本 / 裁剪（scissor 栈）/ 颜色插值
 ]]
 
+local platform = require("lumi.platform")
 local draw = {}
 
 local function clamp(v, lo, hi)
@@ -25,7 +26,7 @@ end
     绘制状态去重
     LÖVE 的 setColor/setFont 每次调用都要跨 Lua/C 边界并写入渲染状态，
     而界面里大量连续绘制使用同一颜色/字体。这里记录当前值，相同则直接跳过。
-    注意：love.graphics.push("all") / pop() 会保存并恢复渲染状态，
+    注意：platform.graphics.push("all") / pop() 会保存并恢复渲染状态，
     跨越这类栈操作后必须调用 draw.resetState()，否则缓存与真实状态不一致。
 ]]
 local lastColorR, lastColorG, lastColorB, lastColorA
@@ -45,14 +46,14 @@ function draw.setColor(c, g, b, a)
     if hasColor and r == lastColorR and gg == lastColorG and bb == lastColorB and aa == lastColorA then
         return
     end
-    love.graphics.setColor(r, gg, bb, aa)
+    platform.graphics.setColor(r, gg, bb, aa)
     lastColorR, lastColorG, lastColorB, lastColorA = r, gg, bb, aa
     hasColor = true
 end
 
 function draw.setFont(f)
     if f ~= nil and f ~= lastFont then
-        love.graphics.setFont(f)
+        platform.graphics.setFont(f)
         lastFont = f
     end
 end
@@ -62,6 +63,11 @@ function draw.resetState()
     hasColor = false
     lastFont = nil
 end
+
+-- 后端被替换（platform.install）后，真实渲染状态与缓存不再对应，必须作废
+platform.onInstall(function()
+    draw.resetState()
+end)
 
 -- 常用常量，避免每次绘制新建颜色/空表
 local WHITE = { 1, 1, 1, 1 }
@@ -134,11 +140,11 @@ end
 local function fillRounded(x, y, w, h, r)
     r = clamp(r or 0, 0, math.min(w, h) / 2)
     if r <= 0 then
-        love.graphics.rectangle("fill", x, y, w, h)
+        platform.graphics.rectangle("fill", x, y, w, h)
         return
     end
     writeRoundRect(fillVerts, x, y, w, h, r)
-    love.graphics.polygon("fill", fillVerts)
+    platform.graphics.polygon("fill", fillVerts)
 end
 
 -- 填充圆角矩形
@@ -153,16 +159,16 @@ function draw.roundRectLine(x, y, w, h, r, color, lineWidth)
     if w <= 0 or h <= 0 then return end
     local lw = lineWidth or 1
     draw.setColor(color)
-    love.graphics.setLineWidth(lw)
+    platform.graphics.setLineWidth(lw)
     local ix, iy = x + lw / 2, y + lw / 2
     local iw, ih = w - lw, h - lw
     local rr = clamp(r or 0, 0, math.min(iw, ih) / 2)
     if rr <= 0 then
-        love.graphics.rectangle("line", ix, iy, iw, ih)
+        platform.graphics.rectangle("line", ix, iy, iw, ih)
         return
     end
     writeRoundRect(lineVerts, ix, iy, iw, ih, rr)
-    love.graphics.polygon("line", lineVerts)
+    platform.graphics.polygon("line", lineVerts)
 end
 
 -- 阴影分层参数缓存（按 elevation 缓存）
@@ -293,13 +299,13 @@ function draw.text(str, x, y, w, opts)
     draw.setColor(color)
 
     if opts.limit and opts.limit > 0 then
-        love.graphics.printf(str, x, y, opts.limit, align)
+        platform.graphics.printf(str, x, y, opts.limit, align)
     else
         local text = str
         if opts.ellipsis and w and w > 0 then
             text = draw.truncate(font, str, w)
         end
-        love.graphics.print(text, x, y)
+        platform.graphics.print(text, x, y)
     end
 end
 
@@ -334,11 +340,11 @@ function draw.image(img, x, y, w, h, opts)
     local dx, dy, dw, dh = draw.calcFit(iw, ih, w, h, opts.fit)
     draw.setColor(opts.tint or WHITE3)
     if opts.fit == "stretch" or opts.fit == "fill" then
-        love.graphics.draw(img, x, y, 0, w / iw, h / ih)
+        platform.graphics.draw(img, x, y, 0, w / iw, h / ih)
     elseif opts.fit == "center" then
-        love.graphics.draw(img, x + dx, y + dy)
+        platform.graphics.draw(img, x + dx, y + dy)
     else
-        love.graphics.draw(img, x + dx, y + dy, 0, dw / iw, dh / ih)
+        platform.graphics.draw(img, x + dx, y + dy, 0, dw / iw, dh / ih)
     end
 end
 
@@ -352,26 +358,26 @@ end
 -- 在圆形遮罩内绘制（fn 为绘制回调）
 function draw.inCircle(cx, cy, r, fn)
     draw.stencilMask(function()
-        love.graphics.circle("fill", cx, cy, r)
+        platform.graphics.circle("fill", cx, cy, r)
     end, fn)
 end
 
 -- 通用模板裁剪：maskFn 绘制遮罩形状（不可见），随后仅遮罩内可见地执行 fn
 function draw.stencilMask(maskFn, fn)
-    if love.graphics.setStencilMode then
+    if platform.graphics.setStencilMode then
         -- LÖVE 12：状态式 API；draw 模式不屏蔽颜色写入，遮罩需以全透明色绘制
-        love.graphics.setStencilMode("draw", 1)
+        platform.graphics.setStencilMode("draw", 1)
         draw.setColor(0, 0, 0, 0)
         maskFn()
-        love.graphics.setStencilMode("test", 1)
+        platform.graphics.setStencilMode("test", 1)
         fn()
-        love.graphics.setStencilMode()
+        platform.graphics.setStencilMode()
     else
         -- LÖVE 11：回调式 API
-        love.graphics.stencil(maskFn, "replace", 1)
-        love.graphics.setStencilTest("greater", 0)
+        platform.graphics.stencil(maskFn, "replace", 1)
+        platform.graphics.setStencilTest("greater", 0)
         fn()
-        love.graphics.setStencilTest()
+        platform.graphics.setStencilTest()
     end
 end
 
@@ -394,7 +400,7 @@ end
 function draw.pushClip(x, y, w, h)
     x = x + draw.clipOffsetX
     y = y + draw.clipOffsetY
-    local px, py, pw, ph = love.graphics.getScissor()
+    local px, py, pw, ph = platform.graphics.getScissor()
     local has = (px ~= nil)
     local nx, ny, nw, nh
     if has then
@@ -409,16 +415,16 @@ function draw.pushClip(x, y, w, h)
     end
     -- 保存 push 前状态（1..5）与 push 后生效矩形（6..9，供 rectVisible 快速剔除）
     table.insert(draw.scissors, { px, py, pw, ph, has, nx, ny, nw, nh })
-    love.graphics.setScissor(nx, ny, nw, nh)
+    platform.graphics.setScissor(nx, ny, nw, nh)
 end
 
 function draw.popClip()
     local prev = table.remove(draw.scissors)
     if not prev then return end
     if prev[5] then
-        love.graphics.setScissor(prev[1], prev[2], prev[3], prev[4])
+        platform.graphics.setScissor(prev[1], prev[2], prev[3], prev[4])
     else
-        love.graphics.setScissor()
+        platform.graphics.setScissor()
     end
 end
 

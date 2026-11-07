@@ -3,6 +3,7 @@
     所有控件与容器的基础：树结构、测量/布局、绘制生命周期、命中测试、事件钩子。
 ]]
 
+local platform = require("lumi.platform")
 local layout = require("lumi.layout")
 local draw = require("lumi.draw")
 local theme = require("lumi.theme")
@@ -112,6 +113,100 @@ function Node:clearChildren()
     self._sorted = nil
     self:invalidate()
 end
+
+-- ---------------- 统一的属性更新入口 ----------------
+
+--[[
+    直接改 node.props.xxx 有两个隐患：布局/绘制缓存不会失效；visible、disabled、z
+    这类属性有"影子状态"（self.visible、state.disabled、父节点的排序缓存），
+    只改 props 不会同步。setProps/setProp 把这两件事一起做掉。
+
+    失效策略：白名单只收录"确定不影响尺寸"的属性，其余一律按影响布局处理 ——
+    漏列最多多一次重排（安全），错列才会导致布局陈旧（危险）。
+]]
+local APPEARANCE_KEYS = {}
+for _, k in ipairs({
+    "bg", "border", "elevation", "radius", "rounded", "color", "colors",
+    "fill", "tint", "alpha", "opacity", "placeholder", "src", "images",
+    "formatValue", "icon", "iconColor",
+}) do
+    APPEARANCE_KEYS[k] = true
+end
+
+-- 找到所属场景（用于清理 hover 等场景级状态）
+function Node:getScene()
+    local n = self
+    while n do
+        if n._ctx then return n._ctx end
+        n = n.parent
+    end
+    return nil
+end
+
+-- 同步"影子状态"类属性（不涉及缓存）
+function Node:_syncProp(k)
+    if k == "disabled" then
+        self.state.disabled = self.props.disabled and true or false
+        if self.state.disabled then
+            self.state.hovered = false
+            self.state.pressed = false
+            local ctx = self:getScene()
+            if ctx and ctx.hover == self then ctx.hover = nil end
+        end
+    elseif k == "visible" then
+        self.visible = self.props.visible ~= false
+    end
+end
+
+-- 按属性类别选择失效范围
+function Node:_invalidateProp(k)
+    if k == "z" then
+        -- 只影响绘制/命中顺序，与尺寸无关
+        if self.parent then self.parent._sorted = nil end
+        self._cacheCv = nil
+        return
+    end
+    if APPEARANCE_KEYS[k] then
+        -- 只影响像素，丢弃 Canvas 缓存即可
+        self._cacheCv = nil
+        return
+    end
+    self:invalidate()
+end
+
+--- 更新单个属性，返回 self（链式）
+function Node:setProp(key, value)
+    if key == nil then return self end
+    if self.props[key] == value then return self end
+    self.props[key] = value
+    self:_syncProp(key)
+    self:_invalidateProp(key)
+    self:onPropsChanged({ key })
+    return self
+end
+
+--- 批量更新属性：{ text = "新值", bg = "primary" }，返回 self
+function Node:setProps(t)
+    if type(t) ~= "table" then return self end
+    local changed = nil
+    for k, v in pairs(t) do
+        if self.props[k] ~= v then
+            self.props[k] = v
+            changed = changed or {}
+            changed[#changed + 1] = k
+        end
+    end
+    if not changed then return self end
+    table.sort(changed)   -- 让副作用顺序稳定（便于复现与测试）
+    for i = 1, #changed do self:_syncProp(changed[i]) end
+    for i = 1, #changed do self:_invalidateProp(changed[i]) end
+    self:onPropsChanged(changed)
+    return self
+end
+
+--- 属性变化后的自定义反应（控件覆写，例如重建内部结构）
+--  @param changed table 发生变化的属性名数组
+function Node:onPropsChanged(changed) end
 
 -- 按 z-index 排序后的绘制顺序（z 小者先绘制在下层，稳定排序保持插入顺序）
 function Node:getDrawOrder()
@@ -256,30 +351,30 @@ function Node:drawCached()
     if not cv then
         local w = math.max(1, math.floor(self.w + 0.5))
         local h = math.max(1, math.floor(self.h + 0.5))
-        cv = love.graphics.newCanvas(w, h)
-        love.graphics.push("all")
+        cv = platform.newCanvas(w, h)
+        platform.graphics.push("all")
         -- LÖVE 12：setCanvas 表参数请求临时 stencil 附件（子树内圆角/圆形裁剪需要）；LÖVE 11 渲染目标自带，降级为普通绑定
         if not pcall(function()
-            love.graphics.setCanvas({ cv, stencil = true })
+            platform.graphics.setCanvas({ cv, stencil = true })
         end) then
-            love.graphics.setCanvas(cv)
+            platform.graphics.setCanvas(cv)
         end
-        love.graphics.clear(0, 0, 0, 0)
-        love.graphics.setScissor() -- 清除继承自父级裁剪区的 scissor（其作用于渲染目标像素）
-        love.graphics.origin()
-        love.graphics.translate(-self.x, -self.y)
+        platform.graphics.clear(0, 0, 0, 0)
+        platform.graphics.setScissor() -- 清除继承自父级裁剪区的 scissor（其作用于渲染目标像素）
+        platform.graphics.origin()
+        platform.graphics.translate(-self.x, -self.y)
         -- scissor 是目标像素坐标（不受 transform 影响），渲染期间叠加平移偏移修正
         local ox, oy = draw.clipOffsetX, draw.clipOffsetY
         draw.clipOffsetX, draw.clipOffsetY = ox - self.x, oy - self.y
         self:renderTree()
         draw.clipOffsetX, draw.clipOffsetY = ox, oy
-        love.graphics.pop()
+        platform.graphics.pop()
         draw.resetState()   -- pop 恢复了渲染状态（颜色/字体），缓存作废
         self._cacheCv = cv
         self._cacheW, self._cacheH = self.w, self.h
     end
     draw.setColor(1, 1, 1, 1)
-    love.graphics.draw(cv, self.x, self.y)
+    platform.graphics.draw(cv, self.x, self.y)
 end
 
 -- 通用背景绘制（bg/elevation/border 配置生效）

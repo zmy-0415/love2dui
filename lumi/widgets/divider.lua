@@ -3,6 +3,7 @@
     direction: horizontal（默认）/ vertical，可选中间标题 text。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -33,7 +34,7 @@ function Divider:drawContent()
 
     if p.direction == "vertical" then
         draw.setColor(color)
-        love.graphics.rectangle("fill", self.x + self.w / 2, self.y, 1, self.h)
+        platform.graphics.rectangle("fill", self.x + self.w / 2, self.y, 1, self.h)
         return
     end
 
@@ -43,12 +44,12 @@ function Divider:drawContent()
         local tw = draw.textWidth(f, p.text)
         local tx = self.x + (self.w - tw) / 2
         draw.setColor(color)
-        love.graphics.rectangle("fill", self.x, cy, tx - self.x - 8, 1)
-        love.graphics.rectangle("fill", tx + tw + 8, cy, self.x + self.w - (tx + tw + 8), 1)
+        platform.graphics.rectangle("fill", self.x, cy, tx - self.x - 8, 1)
+        platform.graphics.rectangle("fill", tx + tw + 8, cy, self.x + self.w - (tx + tw + 8), 1)
         draw.text(p.text, tx, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("muted") })
     else
         draw.setColor(color)
-        love.graphics.rectangle("fill", self.x, cy, self.w, 1)
+        platform.graphics.rectangle("fill", self.x, cy, self.w, 1)
     end
 end
 

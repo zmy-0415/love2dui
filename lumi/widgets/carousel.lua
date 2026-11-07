@@ -5,6 +5,7 @@
     用法：ui:carousel({ images = imgs, h = 200, auto = 2.5, onChange = function(i) end })
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local draw = require("lumi.draw")
@@ -193,8 +194,8 @@ function Carousel:drawContent()
     local ax1, ax2 = self.x + 18, self.x + self.w - 18
     local as = ar * 1.1
     draw.setColor(0, 0, 0, hoverBoost)
-    love.graphics.circle("fill", ax1, cy, ar)
-    love.graphics.circle("fill", ax2, cy, ar)
+    platform.graphics.circle("fill", ax1, cy, ar)
+    platform.graphics.circle("fill", ax2, cy, ar)
     Icon.drawIcon("chevron-left", ax1 - as / 2, cy - as / 2, as, { 1, 1, 1, 0.92 })
     Icon.drawIcon("chevron-right", ax2 - as / 2, cy - as / 2, as, { 1, 1, 1, 0.92 })
 
@@ -207,7 +208,7 @@ function Carousel:drawContent()
                 draw.roundRect(cx - 10, dy - 3, 20, 6, 3, { 1, 1, 1, 0.95 })
             else
                 draw.setColor(1, 1, 1, 0.5)
-                love.graphics.circle("fill", cx, dy, 3)
+                platform.graphics.circle("fill", cx, dy, 3)
             end
         end
     end

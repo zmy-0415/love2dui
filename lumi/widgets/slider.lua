@@ -3,6 +3,7 @@
     拖拽调整、step 步进、showValue、onChanged(value)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -111,7 +112,7 @@ function Slider:drawContent()
     if self.state.hovered or self._dragging then thumbR = thumbR + 1.5 end
     draw.shadow(thumbX - thumbR, cy - thumbR, thumbR * 2, thumbR * 2, thumbR, self._dragging and 2 or 1)
     draw.setColor(theme.color("surface"))
-    love.graphics.circle("fill", thumbX, cy, thumbR)
+    platform.graphics.circle("fill", thumbX, cy, thumbR)
 
     -- 数值
     if p.showValue then

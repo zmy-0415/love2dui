@@ -4,6 +4,7 @@
     点击展开/折叠，选中回调 onSelect(item)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -165,13 +166,13 @@ function Tree:draw()
                 local ax = x + 4
                 local ay = rowY + ROW_H / 2
                 draw.setColor(theme.color("muted"))
-                love.graphics.setLineWidth(1.5)
+                platform.graphics.setLineWidth(1.5)
                 if self._expanded[row.item] then
-                    love.graphics.line(ax - 4, ay - 2, ax, ay + 2)
-                    love.graphics.line(ax, ay + 2, ax + 4, ay - 2)
+                    platform.graphics.line(ax - 4, ay - 2, ax, ay + 2)
+                    platform.graphics.line(ax, ay + 2, ax + 4, ay - 2)
                 else
-                    love.graphics.line(ax - 2, ay - 4, ax + 2, ay)
-                    love.graphics.line(ax + 2, ay, ax - 2, ay + 4)
+                    platform.graphics.line(ax - 2, ay - 4, ax + 2, ay)
+                    platform.graphics.line(ax + 2, ay, ax - 2, ay + 4)
                 end
                 x = x + 12
             end

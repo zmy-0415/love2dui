@@ -4,6 +4,7 @@
     负责把 love.* 事件转发给对应控件。
 ]]
 
+local platform = require("lumi.platform")
 local theme = require("lumi.theme")
 local animate = require("lumi.animate")
 local event = require("lumi.event")
@@ -114,8 +115,7 @@ function Scene.new()
     self.focus = nil
     self.pressed = nil
     self._mouseX, self._mouseY = 0, 0
-    self.width = love.graphics.getWidth()
-    self.height = love.graphics.getHeight()
+    self.width, self.height = platform.windowSize()
     self._layoutDirty = true
     self._tooltipTarget = nil
     self._tooltipTimer = 0
@@ -447,7 +447,7 @@ function Scene:keypressed(key)
         return
     end
     if key == "tab" then
-        local reverse = love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+        local reverse = platform.isDown("lshift") or platform.isDown("rshift")
         self:focusNext(reverse)
         return
     end
@@ -572,7 +572,7 @@ function Scene:drawToasts()
 end
 
 function Scene:draw()
-    love.graphics.clear(theme.color("background"))
+    platform.graphics.clear(theme.color("background"))
     if self.root then self.root:draw() end
     for _, o in ipairs(self.overlays) do
         o:draw()

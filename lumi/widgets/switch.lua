@@ -3,6 +3,7 @@
     拇指滑动动画、label、onChanged(checked)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -67,7 +68,7 @@ function Switch:drawContent()
     local thumbY = by + (TRACK_H - THUMB) / 2
     draw.shadow(thumbX, thumbY, THUMB, THUMB, THUMB / 2, 1)
     draw.setColor(theme.color("surface"))
-    love.graphics.circle("fill", thumbX + THUMB / 2, thumbY + THUMB / 2, THUMB / 2)
+    platform.graphics.circle("fill", thumbX + THUMB / 2, thumbY + THUMB / 2, THUMB / 2)
 
     if p.label then
         local f = font.get(theme.font.body)

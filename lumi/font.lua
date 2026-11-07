@@ -4,6 +4,7 @@
     启动时探测常见中文字体（等线/雅黑/黑体），找不到则回退默认字体。
 ]]
 
+local platform = require("lumi.platform")
 local font = {}
 
 local cjkData = nil
@@ -27,7 +28,7 @@ local function detect()
             local data = f:read("*a")
             f:close()
             local ok = pcall(function()
-                cjkData = love.filesystem.newFileData(data, "cjk")
+                cjkData = platform.newFileData(data, "cjk")
             end)
             if ok and cjkData then
                 return true
@@ -43,9 +44,9 @@ function font.load(size)
         detect()
     end
     if cjkData then
-        return love.graphics.newFont(cjkData, size)
+        return platform.newFontFromData(cjkData, size)
     end
-    return love.graphics.newFont(size)
+    return platform.newFont(size)
 end
 
 -- 带缓存的字号获取

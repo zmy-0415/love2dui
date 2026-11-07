@@ -6,6 +6,7 @@
     props.closable = true 显示右上角关闭按钮。
 ]]
 
+local platform = require("lumi.platform")
 local Box = require("lumi.widgets.box")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -48,18 +49,18 @@ function Dialog:draw()
     local t = self._ovT or 1
     -- 遮罩（随进出场淡入淡出，不受面板缩放影响）
     draw.setColor({ 0, 0, 0, 0.55 * t })
-    love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+    platform.graphics.rectangle("fill", 0, 0, platform.graphics.getWidth(), platform.graphics.getHeight())
 
     -- 面板：中心缩放进场（0.94 → 1）
     local radius = self:resolveRadius(self.props.radius, theme.shape.large)
-    love.graphics.push()
+    platform.graphics.push()
     if t < 1 then
         local s = 0.94 + 0.06 * t
         local cx = self.x + self.w / 2
         local cy = self.y + self.h / 2
-        love.graphics.translate(cx, cy)
-        love.graphics.scale(s, s)
-        love.graphics.translate(-cx, -cy)
+        platform.graphics.translate(cx, cy)
+        platform.graphics.scale(s, s)
+        platform.graphics.translate(-cx, -cy)
     end
     draw.shadow(self.x, self.y, self.w, self.h, radius, 3)
     draw.roundRect(self.x, self.y, self.w, self.h, radius, theme.color("surface"))
@@ -80,7 +81,7 @@ function Dialog:draw()
     for _, c in ipairs(self:getDrawOrder()) do
         c:draw()
     end
-    love.graphics.pop()
+    platform.graphics.pop()
     draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 

@@ -5,6 +5,7 @@
     用法：局部替换 Box —— local list = Overlay.new(props)，其余行为同 Box。
 ]]
 
+local platform = require("lumi.platform")
 local Box = require("lumi.widgets.box")
 local draw = require("lumi.draw")
 
@@ -24,12 +25,12 @@ function Overlay:draw()
     if t and t < 1 then
         local s = 0.92 + 0.08 * t
         local oy = -10 * (1 - t) -- 自上滑入
-        love.graphics.push()
-        love.graphics.translate(self.x, self.y + oy)
-        love.graphics.scale(s, s)
-        love.graphics.translate(-self.x, -(self.y + oy))
+        platform.graphics.push()
+        platform.graphics.translate(self.x, self.y + oy)
+        platform.graphics.scale(s, s)
+        platform.graphics.translate(-self.x, -(self.y + oy))
         Box.draw(self)
-        love.graphics.pop()
+        platform.graphics.pop()
         draw.resetState()   -- pop 恢复渲染状态，缓存作废
     else
         Box.draw(self)

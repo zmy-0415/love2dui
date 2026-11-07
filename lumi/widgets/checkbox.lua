@@ -3,6 +3,7 @@
     勾选动画、label、onChanged(checked)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -64,14 +65,14 @@ function Checkbox:drawContent()
     if self._anim > 0 then
         draw.roundRect(bx, by, size, size, radius, { base[1], base[2], base[3], self._anim })
         draw.setColor({ theme.color("onPrimary")[1], theme.color("onPrimary")[2], theme.color("onPrimary")[3], self._anim })
-        love.graphics.setLineWidth(2.5)
+        platform.graphics.setLineWidth(2.5)
         local x1, y1 = bx + 5, by + size / 2
         local x2, y2 = bx + size / 2, by + size - 5
         local x3, y3 = bx + size - 4, by + 4.5
-        love.graphics.line(x1, y1, x1 + (x2 - x1) * self._anim, y1 + (y2 - y1) * self._anim)
+        platform.graphics.line(x1, y1, x1 + (x2 - x1) * self._anim, y1 + (y2 - y1) * self._anim)
         if self._anim > 0.5 then
             local t2 = (self._anim - 0.5) / 0.5
-            love.graphics.line(x2, y2, x2 + (x3 - x2) * t2, y2 + (y3 - y2) * t2)
+            platform.graphics.line(x2, y2, x2 + (x3 - x2) * t2, y2 + (y3 - y2) * t2)
         end
     end
 

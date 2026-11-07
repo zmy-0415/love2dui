@@ -4,6 +4,7 @@
     特性：状态过渡动画、点击波纹、禁用态、onClick 回调。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -101,7 +102,7 @@ function Button:onUpdate(dt)
     -- 推进波纹
     for i = #self.ripples, 1, -1 do
         local r = self.ripples[i]
-        r.t = (love.timer.getTime() - r.start) / r.duration
+        r.t = (platform.now() - r.start) / r.duration
         if r.t >= 1 then
             table.remove(self.ripples, i)
         end
@@ -120,7 +121,7 @@ function Button:mousepressed(x, y, button, ctx)
     table.insert(self.ripples, {
         x = x - self.x,
         y = y - self.y,
-        start = love.timer.getTime(),
+        start = platform.now(),
         duration = 0.45,
         t = 0,
         maxR = maxR,
@@ -156,7 +157,7 @@ function Button:drawContent()
         local a = (1 - math.min(1, r.t)) * 0.28
         draw.pushClip(self.x, self.y, self.w, self.h)
         draw.setColor({ rippleColor[1], rippleColor[2], rippleColor[3], a })
-        love.graphics.circle("fill", self.x + r.x, self.y + r.y, e * r.maxR)
+        platform.graphics.circle("fill", self.x + r.x, self.y + r.y, e * r.maxR)
         draw.popClip()
     end
 

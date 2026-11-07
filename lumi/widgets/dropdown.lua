@@ -3,6 +3,7 @@
     items: 字符串列表或 {label=, value=} 列表；点击展开浮动列表，选中回调 onChanged(value)。
 ]]
 
+local platform = require("lumi.platform")
 local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
@@ -150,14 +151,14 @@ function Dropdown:drawContent()
     -- 箭头（展开时旋转 180°）
     local ax = self.x + self.w - 18
     local ay = self.y + self.h / 2
-    love.graphics.push()
-    love.graphics.translate(ax, ay)
-    love.graphics.rotate((self._arrowT or 0) * math.pi)
+    platform.graphics.push()
+    platform.graphics.translate(ax, ay)
+    platform.graphics.rotate((self._arrowT or 0) * math.pi)
     draw.setColor(theme.color("muted"))
-    love.graphics.setLineWidth(2)
-    love.graphics.line(-4, -2, 0, 2)
-    love.graphics.line(0, 2, 4, -2)
-    love.graphics.pop()
+    platform.graphics.setLineWidth(2)
+    platform.graphics.line(-4, -2, 0, 2)
+    platform.graphics.line(0, 2, 4, -2)
+    platform.graphics.pop()
     draw.resetState()   -- pop 恢复渲染状态，缓存作废
 end
 

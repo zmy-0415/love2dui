@@ -7,6 +7,7 @@
         love.draw       → ui:draw() 后调用 lumi.debug.draw(ui)
 ]]
 
+local platform = require("lumi.platform")
 local draw = require("lumi.draw")
 local font = require("lumi.font")
 
@@ -75,9 +76,9 @@ function debug.draw(ui)
     for _, node in ipairs(list) do
         if node.w > 0 and node.h > 0 then
             local color = node.acceptsChildren and { 0.3, 0.7, 1, 0.6 } or { 1, 0.6, 0.3, 0.6 }
-            love.graphics.setLineWidth(1)
+            platform.graphics.setLineWidth(1)
             draw.setColor(color)
-            love.graphics.rectangle("line", node.x, node.y, node.w, node.h)
+            platform.graphics.rectangle("line", node.x, node.y, node.w, node.h)
         end
     end
 
@@ -104,10 +105,10 @@ function debug.draw(ui)
     local panelW = 320
     local panelH = #lines * lineH + pad * 2
     draw.setColor({ 0.05, 0.05, 0.08, 0.78 })
-    love.graphics.rectangle("fill", 10, 10, panelW, panelH)
+    platform.graphics.rectangle("fill", 10, 10, panelW, panelH)
     draw.setColor({ 1, 1, 1, 1 })
     for i, line in ipairs(lines) do
-        love.graphics.print(line, 10 + pad, 10 + pad + (i - 1) * lineH)
+        platform.graphics.print(line, 10 + pad, 10 + pad + (i - 1) * lineH)
     end
 end
 
