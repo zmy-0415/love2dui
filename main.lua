@@ -23,14 +23,24 @@ local DEFAULT = "showcase"
 local EXAMPLES = { "showcase", "minimal", "layout", "forms", "editor", "data", "theme" }
 
 local function resolve(args)
-    local want = type(args) == "table" and args[1] or nil
-    -- LÖVE 会把 --xxx 之类的选项也放进 args，忽略以 - 开头的
-    if type(want) ~= "string" or want:sub(1, 1) == "-" then return DEFAULT end
-    for _, name in ipairs(EXAMPLES) do
-        if name == want then return name end
+    if type(args) ~= "table" then return DEFAULT end
+    local unknown
+    for _, v in ipairs(args) do
+        -- 跳过 --xxx 之类的选项
+        if type(v) == "string" and v:sub(1, 1) ~= "-" then
+            for _, name in ipairs(EXAMPLES) do
+                if v == name then return name end
+            end
+            -- 不同 LÖVE 版本的 arg 表可能把游戏路径放在前面（"." 或 "xxx.love"），跳过它
+            if v ~= "." and v ~= ".." and not v:lower():match("%.love$") then
+                unknown = unknown or v
+            end
+        end
     end
-    print("[LumiUI] 未知示例: " .. tostring(want))
-    print("[LumiUI] 可用示例: " .. table.concat(EXAMPLES, " / "))
+    if unknown then
+        print("[LumiUI] 未知示例: " .. unknown)
+        print("[LumiUI] 可用示例: " .. table.concat(EXAMPLES, " / "))
+    end
     return DEFAULT
 end
 
