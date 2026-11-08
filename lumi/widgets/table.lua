@@ -8,6 +8,7 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
+local wheel = require("lumi.wheel")
 
 local Table = setmetatable({}, { __index = Widget })
 Table.__index = Table
@@ -81,12 +82,7 @@ function Table:setScroll(v)
 end
 
 function Table:onUpdate(dt)
-    if math.abs(self.velocity) > 1 then
-        self:setScroll(self.scrollY + self.velocity * dt)
-        self.velocity = self.velocity * (1 - math.min(1, dt * 5))
-    else
-        self.velocity = 0
-    end
+    wheel.update(self, dt)
     if self._ctx then
         local headerH = self.props.headerHeight or 40
         local rowH = self.props.rowHeight or 36
@@ -101,7 +97,7 @@ function Table:onUpdate(dt)
 end
 
 function Table:wheelmoved(x, y, ctx)
-    self.velocity = self.velocity + y * -100
+    wheel.scroll(self, y)
 end
 
 function Table:mousepressed(x, y, button, ctx)

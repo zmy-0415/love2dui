@@ -459,7 +459,14 @@ ui:root({ direction = "column", gap = 12 })
 
 ### scroll —— 滚动区
 
-容器类，内容超出视口时纵向滚动（滚轮 + 惯性）。子节点会按**更大内容高度**布局并整体平移。
+容器类，内容超出视口时纵向滚动。子节点会按**更大内容高度**布局并整体平移。
+
+滚轮一格 = `wheelStep` 像素（默认 64，约 3 行正文），当帧立即位移，另加 30% 的惯性尾巴，
+滑行距离与帧率无关。全局改手感用 `require("lumi").wheel.STEP = 96`。
+
+| Prop | 类型 | 说明 |
+|---|---|---|
+| `wheelStep` | number | 滚轮一格位移像素（默认 64） |
 
 ```lua
 ui:root({ w = 300, h = 400 }, function(r)
@@ -468,6 +475,8 @@ ui:root({ w = 300, h = 400 }, function(r)
             s:label("第 " .. i .. " 行")
         end
     end)
+    -- 内容很长、想滚得快些
+    r:scroll({ h = 200, wheelStep = 120 }, function(s) ... end)
 end)
 ```
 
@@ -551,6 +560,7 @@ end)
 ### editor —— 多行文本编辑器
 
 多行编辑，支持行号、语法高亮、撤销/重做、查找/替换、纵向/横向滚动。
+滚轮一格 = `wheelStep`（默认 64）像素，`Shift` + 滚轮横向滚动。
 
 | Prop | 类型 | 说明 |
 |---|---|---|
@@ -561,6 +571,7 @@ end)
 | `h` | number | 显式高度（优先于行数） |
 | `highlight` | function(lineText, lineIdx) | 语法高亮回调，见下 |
 | `onChange` | function(text) | 文本变化回调 |
+| `wheelStep` | number | 滚轮一格位移像素（默认 64） |
 
 **语法高亮**：`highlight` 返回分段数组 `{{from=字节, to=字节, color=色}, ...}`（0-based 半开字节偏移，`from`/`to` 来自 `string.find` 的 `-1` 换算）：
 
@@ -1172,7 +1183,9 @@ ui:root({ direction = "row" })
   画焦点环请用 `focusVisible`（只在键盘操作时点亮），`focused` 表示"持有焦点"。
 - 内容变化需调用 `self:invalidate()` 使布局缓存失效。
 - 容器控件需设置 `self.acceptsChildren = true`。
-- 需要滚轮事件（并阻止冒泡到外层滚动容器）时设置 `self.isScroll = true`。
+- 需要滚轮事件（并阻止冒泡到外层滚动容器）时设置 `self.isScroll = true`，
+  滚轮处理建议直接用 `require("lumi.wheel")`：`wheel.scroll(self, y)` 负责立即位移，
+  `wheel.update(self, dt)` 在 `onUpdate` 里推进惯性——这样手感和内置滚动区一致。
 
 ---
 

@@ -9,6 +9,7 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
+local wheel = require("lumi.wheel")
 
 local Tree = setmetatable({}, { __index = Widget })
 Tree.__index = Tree
@@ -112,12 +113,7 @@ function Tree:setScroll(v)
 end
 
 function Tree:onUpdate(dt)
-    if math.abs(self.velocity) > 1 then
-        self:setScroll(self.scrollY + self.velocity * dt)
-        self.velocity = self.velocity * (1 - math.min(1, dt * 5))
-    else
-        self.velocity = 0
-    end
+    wheel.update(self, dt)
     if self._ctx then
         local y = self._ctx._mouseY
         self._hoverRow = nil
@@ -130,7 +126,7 @@ function Tree:onUpdate(dt)
 end
 
 function Tree:wheelmoved(x, y, ctx)
-    self.velocity = self.velocity + y * -100
+    wheel.scroll(self, y)
 end
 
 function Tree:mousepressed(x, y, button, ctx)

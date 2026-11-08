@@ -7,7 +7,7 @@ local platform = require("lumi.platform")
 
 local lumi = {}
 
-lumi.version = "0.5.0"
+lumi.version = "0.5.1"
 
 --- 创建场景
 --  @param opts table 可选：{ backend = <表>, width = <数>, height = <数> }
@@ -36,6 +36,7 @@ lumi.animate = require("lumi.animate")
 lumi.font = require("lumi.font")
 lumi.image = require("lumi.image")
 lumi.debug = require("lumi.debug")
+lumi.wheel = require("lumi.wheel")
 lumi.platform = platform
 
 return lumi

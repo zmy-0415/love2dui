@@ -15,6 +15,7 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
+local wheel = require("lumi.wheel")
 
 local Editor = setmetatable({}, { __index = Widget })
 Editor.__index = Editor
@@ -764,10 +765,12 @@ function Editor:mousereleased(x, y, button, ctx, hit)
 end
 
 function Editor:wheelmoved(x, y, ctx)
+    -- 与滚动区/表格/树共享同一个步长（默认 3 行），Shift 时横向滚
+    local step = wheel.stepOf(self)
     if isShift() then
-        self.scrollX = self.scrollX - y * 40
+        self.scrollX = self.scrollX - y * step
     else
-        self.scrollY = self.scrollY - y * 40
+        self.scrollY = self.scrollY - y * step
     end
     self:clampScroll()
 end

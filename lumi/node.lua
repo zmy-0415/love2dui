@@ -142,6 +142,9 @@ for _, k in ipairs({
     APPEARANCE_KEYS[k] = true
 end
 
+-- 纯运行时行为参数：改这些既不需要重排也不需要重绘
+local RUNTIME_KEYS = { wheelStep = true }
+
 -- 找到所属场景（用于清理 hover 等场景级状态）
 function Node:getScene()
     local n = self
@@ -173,6 +176,10 @@ function Node:_invalidateProp(k)
         -- 只影响绘制/命中顺序，与尺寸无关
         if self.parent then self.parent._sorted = nil end
         self._cacheCv = nil
+        return
+    end
+    if RUNTIME_KEYS[k] then
+        -- 纯运行时行为参数（滚轮步长等），既不影响布局也不影响像素
         return
     end
     if APPEARANCE_KEYS[k] then

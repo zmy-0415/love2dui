@@ -7,6 +7,7 @@ local Widget = require("lumi.widget")
 local theme = require("lumi.theme")
 local layout = require("lumi.layout")
 local draw = require("lumi.draw")
+local wheel = require("lumi.wheel")
 
 local Scroll = setmetatable({}, { __index = Widget })
 Scroll.__index = Scroll
@@ -95,16 +96,11 @@ function Scroll:setScroll(v)
 end
 
 function Scroll:onUpdate(dt)
-    if math.abs(self.velocity) > 1 then
-        self:setScroll(self.scrollY + self.velocity * dt)
-        self.velocity = self.velocity * (1 - math.min(1, dt * 5))
-    else
-        self.velocity = 0
-    end
+    wheel.update(self, dt)
 end
 
 function Scroll:wheelmoved(x, y, ctx)
-    self.velocity = self.velocity + y * -100
+    wheel.scroll(self, y)
 end
 
 -- 命中顺序必须与 draw 一致：按 z 序从高到低，否则重叠子节点会「看到 A 却点到 B」

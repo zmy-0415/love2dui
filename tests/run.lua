@@ -23,6 +23,7 @@ local Menu = require("lumi.widgets.menu")
 local Dialog = require("lumi.widgets.dialog")
 local Divider = require("lumi.widgets.divider")
 local Scroll = require("lumi.widgets.scroll")
+local wheel = require("lumi.wheel")
 local tooltip = require("lumi.widgets.tooltip")
 local Image = require("lumi.widgets.image")
 local Avatar = require("lumi.widgets.avatar")
@@ -558,6 +559,79 @@ local function testScroll()
     zs:arrange(0, 0, 200, 200)
     top.x, top.y, bottom.x, bottom.y = 0, 0, 0, 0
     check("scroll 命中遵循 z 序", zs:hitTest(10, 10) == top)
+
+    -- ---- 滚轮手感 ----
+    -- 一格滚轮应当一帧内就走完主要位移（旧实现是纯惯性，首帧只走 1.7px）
+    local function tall(extra)
+        local s = Scroll.new(extra or { direction = "column" })
+        for i = 1, 200 do s:addChild(Label.new({ text = "行" .. i })) end
+        s:arrange(0, 0, 300, 300)
+        return s
+    end
+
+    local ws = tall()
+    ws:wheelmoved(0, -1, nil)
+    eq("一格滚轮当帧即走出 step", ws.scrollY, wheel.STEP)
+    local us = tall()
+    us:setScroll(500)
+    us:wheelmoved(0, 1, nil)
+    eq("向上滚使 scrollY 减小一格", us.scrollY, 500 - wheel.STEP)
+
+    -- 惯性尾巴：再推进若干帧，总位移约为 step*(1+INERTIA)
+    local settle = 0
+    for _ = 1, 120 do
+        ws:onUpdate(1 / 60)
+        settle = settle + 1
+        if ws.velocity == 0 then break end
+    end
+    local expected = wheel.STEP * (1 + wheel.INERTIA)
+    check("滚轮总位移含惯性尾巴", math.abs(ws.scrollY - expected) < 1.5)
+    check("惯性在 0.5 秒内收敛", settle <= 30)
+
+    -- 反向滚动：立即生效，不需要先等旧惯性卸力
+    local rs = tall()
+    rs:wheelmoved(0, -5, nil)    -- 向下滚 5 格
+    local down = rs.scrollY
+    check("向下滚动使 scrollY 增大", down > 0)
+    rs:wheelmoved(0, 1, nil)     -- 立刻反向
+    check("反向滚动立即回退", rs.scrollY < down)
+
+    -- 帧率无关：60fps 与 144fps 下滑行距离一致（旧实现按 dt 欧拉积分，差 3px+）
+    local function totalAt(dt)
+        local s = tall()
+        s:wheelmoved(0, -1, nil)
+        for _ = 1, math.ceil(0.6 / dt) do s:onUpdate(dt) end
+        return s.scrollY
+    end
+    check("滚轮位移与帧率无关", math.abs(totalAt(1 / 60) - totalAt(1 / 144)) < 0.2)
+
+    -- 边界：已在底部继续向下滚，不应残留速度
+    local bs = tall()
+    bs:setScroll(1e9)
+    bs:wheelmoved(0, -50, nil)
+    eq("底部继续滚动不残留速度", bs.velocity, 0)
+    bs:wheelmoved(0, 1, nil)
+    check("底部反向滚动立即响应", bs.scrollY < bs.contentH - bs.viewH)
+
+    -- props.wheelStep 可逐控件覆盖步长
+    local cs = tall({ direction = "column", wheelStep = 120 })
+    cs:wheelmoved(0, -1, nil)
+    eq("wheelStep 覆盖单格步长", cs.scrollY, 120)
+
+    -- 全局默认值可改（影响新滚动的控件），改回后不影响既有断言
+    local oldStep = wheel.STEP
+    wheel.STEP = 100
+    local gs = tall()
+    gs:wheelmoved(0, -1, nil)
+    eq("全局 STEP 影响默认步长", gs.scrollY, 100)
+    wheel.STEP = oldStep
+
+    -- wheelStep 不触发重排（纯运行时参数）
+    local ns = tall()
+    local arranged = ns.rearranges
+    ns:setProp("wheelStep", 32)
+    ns:update(1 / 60)
+    eq("wheelStep 不触发重排", ns.rearranges, arranged)
 end
 
 local function testRating()
