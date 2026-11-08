@@ -18,7 +18,8 @@
 ]]
 
 local Palette = require("game.art.palette")
-local Rng = require("game.art.rng")
+local Rng = require("game.core.rng")
+local A = require("game.core.affix")
 
 local W = {}
 
@@ -37,16 +38,21 @@ local TIER = {
 }
 
 -- 类别 → 基础形状
+-- lenMul 让不同品类的「同样档位」长度不同：弓要比剑长得多才好拉，
+-- 镰要短一点才不像大剑，这些是剪影层面的事，参数表里说不了
 local CLASS = {
     sword  = { w = 3.2, profile = "blade", guard = "cross" },
     great  = { w = 5.4, profile = "cleaver", guard = "cross" },
     axe    = { w = 6.2, profile = "axe", guard = "ring" },
-    spear  = { w = 2.0, profile = "spear", guard = "ring" },
+    spear  = { w = 2.0, profile = "spear", guard = "ring", lenMul = 1.55 },
     hammer = { w = 5.0, profile = "hammer", guard = "ring" },
-    dagger = { w = 2.4, profile = "blade", guard = "disc" },
+    dagger = { w = 2.4, profile = "blade", guard = "disc", lenMul = 0.62 },
+    sickle = { w = 5.6, profile = "sickle", guard = "ring", lenMul = 1.00 },
+    bow    = { w = 2.0, profile = "bow", guard = "ring", lenMul = 1.45 },
 }
 
--- 词条 → 视觉装饰。设计文档 5.3 的 32 条词条按「看得见的程度」归成 6 类
+-- 词条 → 视觉装饰。M2 起词条表在 game/core/affix.lua，
+-- 但外观映射留在这里：那是「美术怎么表示」，不该让逻辑层知道
 local AFFIX_LOOK = {
     fire = { glow = "ember", edge = 0.9 },
     frost = { glow = "ice", edge = 0.7 },
@@ -57,6 +63,13 @@ local AFFIX_LOOK = {
 }
 
 W.AFFIX_LOOK = AFFIX_LOOK
+
+-- 词条 id → 外观。查不到就返回 nil，不影响武器本身
+local function affixLook(id)
+    local l = A.byId[id] and A.byId[id].look
+    if l then return l end
+    return AFFIX_LOOK[id]
+end
 
 -- ---------------------------------------------------------------- 轮廓
 
@@ -79,6 +92,12 @@ local function bladeProfile(kind, u, tier)
     elseif kind == "spear" then
         -- 枪：细长，只有最后 25% 才收
         base = u < 0.72 and 1 or (1 - (u - 0.72) / 0.28) ^ 1.4
+    elseif kind == "sickle" then
+        -- 镰：前半段保持宽度，末端急收成钩尖。和 cleaver 的区别在弯曲
+        base = 1 - u ^ 3.2
+    elseif kind == "bow" then
+        -- 弓臂：中间略粗、两头收细，像一张拉满的弓
+        base = 0.42 + 0.58 * sin(u * PI)
     end
 
     -- 高阶刃口有细微波纹，暗示锻造工艺；低阶保持粗糙直线
@@ -93,18 +112,26 @@ local function buildBlade(spec, rng)
     local kind = (CLASS[spec.class] or CLASS.sword)
     local tier = spec.bladeTier or 1
     local t = TIER[tier] or TIER[1]
-    local len = t[1] * (spec.lenScale or 1)
+    local len = t[1] * (spec.lenScale or 1) * (kind.lenMul or 1)
     local halfW = kind.w * t[2] * 0.5
 
     local N = 11
     local top, bot = {}, {}
     local curve = t[3] * (spec.curve or 1)
+    local isBow = (kind.profile == "bow")
 
     for i = 0, N do
         local u = i / N
         local p = bladeProfile(kind.profile, u, tier)
-        -- 弯曲：整条刃沿 -Y 偏移，像弯刀那样
-        local bend = -curve * (u ^ 1.7) * 3.0
+        -- 弯曲：整条刃沿 -Y 偏移，像弯刀那样。
+        -- 弓不能用同一个公式——它的弯是「整段月牙」，中点离弦最远，
+        -- 而刀是「越靠尖越弯」，两者叠在一起会变成一根问号
+        local bend
+        if isBow then
+            bend = -sin(u * PI) * len * 0.24
+        else
+            bend = -curve * (u ^ 1.7) * 3.0
+        end
         local y = bend
         local hw = halfW * p
         top[i + 1] = { u * len, y - hw, hw }
@@ -129,6 +156,7 @@ local function buildBlade(spec, rng)
         top = top,
         bot = bot,
         curve = curve,
+        isBow = isBow,
     }
 end
 
@@ -170,7 +198,7 @@ function W.build(spec)
 
     local affixGlow, affixEdge, teeth, rim = nil, 1, false, false
     for _, a in ipairs(spec.affixes or {}) do
-        local look = AFFIX_LOOK[a]
+        local look = affixLook(a)
         if look then
             if look.glow then affixGlow = look.glow end
             if look.teeth then teeth = true end
@@ -272,6 +300,20 @@ function W.draw(g, vis, x, y, ang, scale, opts)
         g.line(bot[i][1], bot[i][2], bot[i + 1][1], bot[i + 1][2])
     end
 
+    -- 4b) 弓弦：两梢之间一根直线。没有这根线，弓看起来就是一根弯木棍
+    if vis.blade.isBow then
+        local top = vis.blade.top
+        local a, b = top[1], top[#top]
+        g.setColor(Palette.rgba(hilt, "light", 0.75))
+        g.setLineWidth(0.7)
+        g.line(a[1], a[2], b[1], b[2])
+        -- 弦中段的「搭箭点」：一个小结，让弓看起来是能用的
+        local mx2 = (a[1] + b[1]) * 0.5
+        local my2 = (a[2] + b[2]) * 0.5
+        g.setColor(Palette.rgba(metal, "light", 0.9))
+        g.circle("fill", mx2, my2, 0.9)
+    end
+
     -- 5) 锯齿（暴击词条）
     if vis.spikes then
         g.setColor(Palette.rgba(metal, "glow"))
@@ -352,7 +394,7 @@ end
 function W.describe(vis)
     local names = {
         sword = "剑", great = "大剑", axe = "战斧", spear = "长枪",
-        hammer = "战锤", dagger = "短刃",
+        hammer = "战锤", dagger = "短刃", sickle = "镰刀", bow = "弓",
     }
     local parts = { "粗制", "精制", "淬火", "裂变", "终焉" }
     local s = vis.spec

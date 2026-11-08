@@ -24,7 +24,7 @@ local Palette = require("game.art.palette")
 
 local Sheet = {}
 
-local W, H = 800, 450
+local W, H = 800, 500
 
 local function label(g, x, y, w)
     -- 软光栅没有字体：用一道细线当作分组标记，保证版式可读
@@ -84,33 +84,44 @@ function Sheet.draw(g)
     Boss.draw(g, maw, 500, 190, 1, "idle", 0.8, { scale = 1.5 })
     Boss.draw(g, maw, 660, 196, -1, "roar", 0, { scale = 1.1 })
 
-    -- ---------------- 第 3 行：武器
-    label(g, 16, 340, W - 32)
+    -- ---------------- 第 3 行：武器（M2 八品类）
+    -- 八把 × 两档 = 16 件，挤在一行里每件只剩 48px，长枪和匕首会糊成一片。
+    -- 所以拆成两行、每行四把，宁可多占 50px 也要让轮廓能分辨——
+    -- 这张图存在的意义就是「一眼看出八把不是同一把武器」
+    label(g, 16, 288, W - 32)
 
-    local classes = { "sword", "great", "axe", "spear", "hammer", "dagger" }
+    local classes = { "sword", "dagger", "spear", "sickle", "great", "axe", "hammer", "bow" }
     local mats = { "copper", "iron", "crystal", "void", "endgame" }
-    local idx = 0
-    for _, cls in ipairs(classes) do
-        for _, tier in ipairs({ 2, 5 }) do
-            idx = idx + 1
-            local vis = Weapon.build({
-                class = cls, bladeTier = tier, hiltTier = tier, coreTier = tier,
-                bladeMat = mats[tier], hiltMat = tier >= 3 and "iron" or "wood",
-                affixes = tier >= 4 and { "fire" } or {},
-            })
-            Weapon.draw(g, vis, 30 + (idx - 1) * 62, 320, -0.10, 1.9)
+
+    local function drawClassRow(list, y)
+        local i = 0
+        for _, cls in ipairs(list) do
+            for _, tier in ipairs({ 2, 5 }) do
+                i = i + 1
+                local vis = Weapon.build({
+                    class = cls, bladeTier = tier, hiltTier = tier, coreTier = tier,
+                    bladeMat = mats[tier], hiltMat = tier >= 3 and "iron" or "wood",
+                    -- 用真实词条 id，这样出图同时也验证了「词条 → 外观」这条链
+                    affixes = tier >= 4 and { "kindle" } or {},
+                })
+                Weapon.draw(g, vis, 26 + (i - 1) * 92, y, -0.10, 2.4)
+            end
         end
     end
 
+    drawClassRow({ "sword", "dagger", "spear", "sickle" }, 300)
+    label(g, 16, 364, W - 32)
+    drawClassRow({ "great", "axe", "hammer", "bow" }, 378)
+
     -- ---------------- 第 4 行：调色板
-    label(g, 16, 424, W - 32)
+    label(g, 16, 452, W - 32)
     local keys = { "wood", "stone", "copper", "iron", "crystal", "rot",
                    "ember", "void", "endgame", "chitin", "slime", "bone" }
     local steps = { "edge", "dark", "base", "light", "glow" }
     for ki, k in ipairs(keys) do
         for si, st in ipairs(steps) do
             g.setColor(Palette.rgba(k, st))
-            g.rectangle("fill", 20 + (ki - 1) * 64 + (si - 1) * 12, 432, 10, 10, 1.5)
+            g.rectangle("fill", 20 + (ki - 1) * 64 + (si - 1) * 12, 462, 10, 10, 1.5)
         end
     end
 end

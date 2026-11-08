@@ -64,5 +64,32 @@ for _, name in ipairs(EXAMPLES) do
     end
 end
 
+--[[
+    rift 额外走一遍两个弹窗。
+
+    通用循环只验证「根节点能建、能画」，而锻造台是点开之后才建树的，
+    所以那条路径完全没被覆盖。这里显式打开两个弹窗再画一遍——
+    锻造台是 M2 唯一的交互界面，它崩了等于整个装备系统不可用。
+]]
+do
+    print("[EXAMPLES] rift 弹窗")
+    local def = require("examples.rift")
+    local backend = newBackend({ width = 1000, height = 700 })
+    local ui = lumi.new({ backend = backend, width = 1000, height = 700 })
+    pcall(def.build, ui, { name = "rift", feedback = function() end })
+
+    for _, name in ipairs({ "openCraft", "openForge" }) do
+        ok(name .. " 存在可调用", type(def[name]) == "function")
+        local opened = pcall(function()
+            def[name]()
+            for _ = 1, 2 do
+                ui:update(1 / 60)
+                ui:draw()
+            end
+        end)
+        ok(name .. " 打开并绘制不抛异常", opened)
+    end
+end
+
 print(string.format("[EXAMPLES] %d total, %d passed, %d failed", total, total - failed, failed))
 os.exit(failed == 0 and 0 or 1)

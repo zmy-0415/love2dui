@@ -12,6 +12,7 @@
 
 local C = require("game.art.creature")
 local World = require("game.core.world")
+local Status = require("game.core.status")
 
 local E = {}
 
@@ -65,6 +66,9 @@ function E.player(g, p, cam)
         outline = 1.0,
         weapon = p.weapon,
         weaponAngle = -0.35,
+        -- 武器画大一圈。角色本身只有 24px 高，武器按 1:1 画时
+        -- 「长枪」和「匕首」在屏幕上差不到 6 像素，玩家看不出换了什么
+        weaponScale = 1.45,
     }
     -- 受击闪白：整副骨架统一染一次色，比逐节点改色省事且不会漏
     if p.hurtFlash > 0 then
@@ -109,14 +113,37 @@ function E.mob(g, m, cam)
     if not m.dead and m.hp and m.hp < m.maxHp then
         local w = (m.barW or 22)
         local bx = sx - w * 0.5
-        -- 按碰撞盒高度往上让 12px，而不是写死一个数：
-        -- 写死的话体型一变，血条就会飘在怪头顶十几像素之外
-        local by = sy - m.h * 1.35 - 10
+        -- 按**视觉高度**往上让，而不是碰撞盒高度，也不是写死的像素：
+        --   写死一个数 → 体型一变血条就飘在头顶十几像素外
+        --   用碰撞盒   → 精英放大 1.3 倍之后，血条会压在头上
+        -- 乘 scale 之后，任何体型的怪血条都刚好在头顶上方一小段
+        local visH = m.h * (m.scale or 1)
+        local by = sy - visH * 1.15 - 12
         g.setColor(0.05, 0.06, 0.08, 0.75)
         g.rectangle("fill", bx - 1, by - 1, w + 2, 4)
         local frac = math.max(0, m.hp / m.maxHp)
         g.setColor(0.85, 0.25, 0.22, 1)
         g.rectangle("fill", bx, by, w * frac, 2)
+
+        -- 精英标记：血条左边一个小菱形。没有它，玩家分不清「这只血厚」
+        -- 和「这只是精英」——而两者该用完全不同的打法
+        if m.elite then
+            g.setColor(1.0, 0.82, 0.45, 0.95)
+            g.polygon("fill", bx - 5, by + 1, bx - 3.5, by - 1.5, bx - 2, by + 1, bx - 3.5, by + 3.5)
+        end
+
+        -- 元素状态：血条上方一排小方块，颜色就是元素色。
+        -- 用方块而不是图标，是因为 16px 尺度下图标认不出来，色块一眼就分得清
+        local act = Status.active(m)
+        if act then
+            local n = #act
+            local x0 = sx - (n * 7 - 2) * 0.5
+            for i = 1, n do
+                local s = act[i]
+                g.setColor(s.color[1], s.color[2], s.color[3], 0.9)
+                g.rectangle("fill", x0 + (i - 1) * 7, by - 8, 5, 4)
+            end
+        end
     end
 end
 
@@ -150,19 +177,40 @@ function E.digCursor(g, p, world, cam)
     end
 end
 
--- 投射物：毒液球。画一个深色芯 + 亮边，暗背景上才看得见
+-- 投射物：毒液球与箭。
+-- 两种画法差别很大，这是刻意的：玩家必须能一眼分清
+-- 「这团绿色是冲我来的」和「那根细线是我刚射出去的」
 function E.projectiles(g, list, cam)
     for i = 1, #list do
         local pr = list[i]
         local sx = pr.x - cam.x
         local sy = pr.y - cam.y
-        -- 拖尾：沿速度反方向拉一小段，速度越快尾巴越长
-        g.setColor(0.35, 0.55, 0.20, 0.35)
-        g.circle("fill", sx - pr.vx * 0.012, sy - pr.vy * 0.012, 4.5)
-        g.setColor(0.52, 0.76, 0.28, 0.95)
-        g.circle("fill", sx, sy, 3.6)
-        g.setColor(0.80, 0.95, 0.52, 0.9)
-        g.circle("fill", sx - pr.vx * 0.004 - 1, sy - pr.vy * 0.004 - 1, 1.6)
+
+        if pr.kind == "arrow" then
+            local len = math.sqrt(pr.vx * pr.vx + pr.vy * pr.vy)
+            local dx, dy = 1, 0
+            if len > 0.01 then dx, dy = pr.vx / len, pr.vy / len end
+
+            -- 淡掉的尾迹
+            g.setColor(0.88, 0.82, 0.58, 0.20)
+            g.setLineWidth(1.0)
+            g.line(sx - dx * 20, sy - dy * 20, sx - dx * 8, sy - dy * 8)
+            -- 箭杆
+            g.setColor(0.74, 0.70, 0.58, 0.95)
+            g.setLineWidth(1.2)
+            g.line(sx - dx * 9, sy - dy * 9, sx + dx * 3, sy + dy * 3)
+            -- 箭头
+            g.setColor(0.97, 0.94, 0.82, 1)
+            g.circle("fill", sx + dx * 3, sy + dy * 3, 1.4)
+        else
+            -- 拖尾：沿速度反方向拉一小段，速度越快尾巴越长
+            g.setColor(0.35, 0.55, 0.20, 0.35)
+            g.circle("fill", sx - pr.vx * 0.012, sy - pr.vy * 0.012, 4.5)
+            g.setColor(0.52, 0.76, 0.28, 0.95)
+            g.circle("fill", sx, sy, 3.6)
+            g.setColor(0.80, 0.95, 0.52, 0.9)
+            g.circle("fill", sx - pr.vx * 0.004 - 1, sy - pr.vy * 0.004 - 1, 1.6)
+        end
     end
 end
 

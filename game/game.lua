@@ -19,16 +19,32 @@ local Physics = require("game.core.physics")
 local WR = require("game.render.world")
 local ER = require("game.render.entities")
 local Weapon = require("game.art.weapon")
+local Weapons = require("game.data.weapons")
 local Mob = require("game.core.mob")
 local Combat = require("game.core.combat")
 local Boss = require("game.core.boss")
 local Recipes = require("game.data.recipes")
+local Forge = require("game.core.forge")
+local Parts = require("game.data.parts")
+local Status = require("game.core.status")
 local Save = require("game.core.save")
 
 local Game = {}
 Game.__index = Game
 
 local T = World.TILE
+
+-- 开局武器：木柄 + 铜刃 + 无芯。为什么不是直接给铁：
+-- 玩家得先感觉到「铜剑砍石傀儡很吃力」，才会去挖铁，
+-- 也才会理解「斧的破韧」为什么值得为它花材料
+local START_SPEC = {
+    class = "sword",
+    bladeMat = "copper", bladeTier = 1,
+    hilt = "wood", hiltMat = "wood", hiltTier = 1,
+    core = "none", coreMat = "crystal", coreTier = 0,
+    affixes = {},
+    seed = 1,
+}
 
 -- 掉落物配色：跟方块/矿的颜色走，捡的时候一眼知道是什么
 local DROP_COL = {
@@ -63,14 +79,6 @@ function Game.new(opts)
     self.cam = Camera.new(self.vw, self.vh)
     self.cam:snap(self.player.x, self.player.y - self.player.h * 0.5, self.world)
     self.inv = Inv.new(40)
-    -- 初始装备：铜剑。M1 的开局就该能打，先让玩家砍死第一只矿虫再谈别的
-    self.weaponSpec = {
-        class = "sword", bladeTier = 1, hiltTier = 1, coreTier = 1,
-        bladeMat = "copper", hiltMat = "wood",
-    }
-    self.player.weapon = Weapon.build(self.weaponSpec)
-    self.player.attackKind = "sword"
-    self.player.attackMat = "copper"
     self.drops = {}
     self.mobs = {}
     self.projectiles = {}
@@ -84,13 +92,46 @@ function Game.new(opts)
     self.holdTime = 0
     self.spawnTimer = 2.0
     self.kills = 0
+    -- 锻造计数：决定「第几次重铸」，也参与词条种子的推导
+    self.forgeCount = 0
+    -- 瞄准点（世界坐标），弓用它决定箭的方向。默认朝面朝方向
+    self.aim = { x = self.player.x + 100, y = self.player.y - 20 }
     -- 调试/测试用：累计挖掘数与拾取数，用来断言流程真的走通了
-    self.stats = { dug = 0, picked = 0, placed = 0 }
+    self.stats = { dug = 0, picked = 0, placed = 0, crafted = 0, forged = 0 }
+
+    -- 初始装备。走和锻造完全相同的 equip 路径，
+    -- 这样「开局武器」和「锻出来的武器」不会有第二条代码分支
+    self:equip(START_SPEC)
 
     if opts.save then
         self:applySave(opts.save)
     end
     return self
+end
+
+--[[
+    换武器。这是唯一的入口——开局、锻造、读档都走这里。
+
+    为什么要有这个统一入口：M1 里「初始化」「合成」「读档」三处
+    各自写了一遍「设 spec + 重建外观 + 设 attackKind」，加一个字段就要改三处，
+    漏一处就会出现「读档后武器变成木剑但伤害还是铁的」这种鬼问题。
+]]
+function Game:equip(spec)
+    self.weaponSpec = spec
+    self.resolved = Weapons.resolve(spec)
+    local p = self.player
+    p.weapon = Weapon.build(spec)
+    -- 攻击进行中换武器：直接结束当前这一刀，避免用旧数值结算完再换
+    p.attackT = 0
+    p.attack = self.resolved
+    -- 镐跟着刃升级：否则玩家打到铁却挖不动晶簇，
+    -- 会被迫在「换武器」和「换镐」之间二选一，这不是我想让玩家纠结的地方
+    local bt = spec.bladeTier or 1
+    if bt > (p.pick.tier or 1) then
+        p.pick.tier = bt
+        p.pick.eff = 1.0 + (bt - 1) * 0.45
+    end
+    return self.resolved
 end
 
 function Game:resize(w, h)
@@ -245,7 +286,52 @@ function Game:spawnProjectile(t)
         kind = t.kind or "venom",
         life = t.life or 3,
         t = 0,
+        -- hostile = true 表示「从怪飞向玩家」。默认 true 是为了兼容 M1 的毒液，
+        -- 玩家的箭显式传 false
+        hostile = (t.hostile ~= false),
+        element = t.element,
+        elementLv = t.elementLv,
+        poise = t.poise or 0,
+        hitSet = {},
     }
+end
+
+--[[
+    放一箭。
+
+    方向朝鼠标，不是朝面朝方向——这是弓和所有近战最根本的区别：
+    近战问「我面向哪」，远程问「我要打哪」。
+    如果箭也朝面朝方向，弓就退化成「射程很长的剑」，玩家只需要站桩按左键。
+
+    起点往前挪 10 像素，避免箭一出生就撞在自己脚下那一格里。
+]]
+function Game:fireArrow(p, w)
+    local dir = p.facing or 1
+    local cx = p.x + dir * 10
+    local cy = p.y - p.h * 0.55
+    local ax, ay = self.aim.x - cx, self.aim.y - cy
+    local len = math.sqrt(ax * ax + ay * ay)
+    if len < 1 then
+        ax, ay = dir, 0
+    else
+        ax, ay = ax / len, ay / len
+    end
+    -- 箭会比视觉略快一点，否则玩家看着箭慢慢飘过去，会提前走开
+    local sp = w.ranged or 500
+    self:spawnProjectile({
+        x = cx, y = cy,
+        vx = ax * sp, vy = ay * sp,
+        dmg = w.damage,
+        kind = "arrow",
+        life = 1.6,
+        hostile = false,
+        element = w.element,
+        elementLv = w.elementLv,
+        poise = w.poise,
+    })
+    self:spawnParticles(cx, cy, 3, {
+        col = { 0.85, 0.80, 0.60 }, spread = 40, life = 0.16, size = 1,
+    })
 end
 
 function Game:onBossHit(b, dmg, res, weak)
@@ -273,32 +359,86 @@ function Game:onBossHit(b, dmg, res, weak)
     end
 end
 
--- 一次命中的全部后果：火花、掉落、精英爆炸
-function Game:onHit(m, dmg, dir, def)
+--[[
+    一次命中的视觉后果。
+
+    注意这里**不再处理死亡**（掉落、精英爆炸、计数都挪到 onMobDeath 了）。
+    原因是 M2 加了元素 DoT：一只被点燃的怪可能在自己回合里烧死，
+    那条路径根本不经过 onHit。如果死亡逻辑只写在 onHit 里，
+    玩家会发现「烧死的怪不掉东西」——而玩家几乎一定会用燃烧磨血。
+]]
+function Game:onHit(m, dmg, dir, def, crit)
     local cx, cy = m:center()
-    self:spawnParticles(cx, cy, 7, {
-        col = { 1.0, 0.78, 0.45 },
-        spread = 150,
+    self:spawnParticles(cx, cy, crit and 12 or 7, {
+        col = crit and { 1.0, 0.92, 0.60 } or { 1.0, 0.78, 0.45 },
+        spread = crit and 210 or 150,
         vx = dir * 60,
-        life = 0.28,
+        life = crit and 0.34 or 0.28,
+        size = crit and 3 or 2,
+    })
+    if crit then
+        self.cam:kick(2.6, 0.14)
+    end
+end
+
+--[[
+    怪物死亡的唯一出口。不管是被砍死、被烧死、被毒死、被爆炸炸死，
+    都从这里走，所以「掉落」和「精英词缀」只需要写一遍。
+
+    deathHandled 标志是必需的：updateMobs 每帧都会看到 dead=true 的怪，
+    没有这个标志就会每帧掉一次材料、每帧炸一圈。
+]]
+function Game:onMobDeath(m)
+    if m.deathHandled then return end
+    m.deathHandled = true
+    self.kills = self.kills + 1
+
+    local cx, cy = m:center()
+    self:spawnParticles(cx, cy, 14, {
+        col = { 0.85, 0.55, 0.35 }, spread = 190, life = 0.5, size = 3,
     })
 
-    if m.dead then
-        self.kills = self.kills + 1
-        self:spawnParticles(cx, cy, 14, {
-            col = { 0.85, 0.55, 0.35 }, spread = 190, life = 0.5, size = 3,
-        })
-        -- 掉落：不同怪给不同材料。M1 的合成线就吃这几种
-        local dropKey = ({
-            crawler = "chitin", flyer = "membrane", blob = "bile", golem = "core_stone",
-        })[m.type]
-        if dropKey then
-            self:spawnDrop(dropKey, m.x / T, (m.y - 4) / T, 1)
-        end
+    -- 掉落：不同怪给不同材料。M2 的锻造线同时吃方块材料和怪物材料
+    local dropKey = ({
+        crawler = "chitin", flyer = "membrane", blob = "bile", golem = "core_stone",
+    })[m.type]
+    if dropKey then
+        self:spawnDrop(dropKey, m.x / T, (m.y - 4) / T, 1)
+        -- 精英掉两份：这是「值得打」的唯一理由，
+        -- 如果精英和普通怪掉一样多，玩家会绕开它们
         if m.elite then
-            self:eliteExplode(m)
+            self:spawnDrop(dropKey, m.x / T, (m.y - 8) / T, 2)
         end
     end
+
+    if m.affix == "burst" then
+        self:eliteExplode(m)
+    elseif m.affix == "split" then
+        self:eliteSplit(m)
+    end
+
+    -- 收割词条：击杀回血。放在这里而不是 onHit，理由同上——烧死也该回血
+    local w = self.resolved
+    if w and w.killHeal then
+        self.player:heal(w.killHeal)
+    end
+end
+
+-- 精英「分裂」：死亡时变两只小的。
+-- 这条词缀专门惩罚单体武器：一锤砸死一只变成两只，玩家会后悔没用镰刀
+function Game:eliteSplit(m)
+    if m.noSplit then return end
+    local n = Mob.AFFIX.split.splitInto or 2
+    for i = 1, n do
+        local off = (i == 1) and -14 or 14
+        local child = Mob.new(m.type, m.x + off, m.y, { small = true })
+        child.facing = (i == 1) and -1 or 1
+        self.mobs[#self.mobs + 1] = child
+    end
+    self.cam:kick(3, 0.22)
+    self:spawnParticles(m.x, m.y - m.h * 0.5, 16, {
+        col = { 0.75, 0.55, 0.85 }, spread = 180, life = 0.42, size = 2,
+    })
 end
 
 -- 精英「爆裂」：死亡时炸一圈。伤害不高，但能逼玩家在砍死它的瞬间后撤，
@@ -333,7 +473,10 @@ function Game:updateProjectiles(dt)
     for i = 1, #self.projectiles do
         local pr = self.projectiles[i]
         pr.t = pr.t + dt
-        pr.vy = pr.vy + 240 * dt
+        -- 箭走平射（重力 90），毒液走抛物线（240）。这个差别是给玩家看的：
+        -- 一眼就能判断「这团东西是冲我来的」还是「我刚射出去的」
+        local isArrow = (pr.kind == "arrow")
+        pr.vy = pr.vy + (isArrow and 90 or 240) * dt
         local nx = pr.x + pr.vx * dt
         local ny = pr.y + pr.vy * dt
         local dead = false
@@ -341,17 +484,61 @@ function Game:updateProjectiles(dt)
         if pr.t > pr.life then dead = true end
         if self.world:solidAtPixel(nx, ny) then
             dead = true
-            self:spawnParticles(nx, ny, 5, { col = { 0.55, 0.75, 0.3 }, spread = 70, life = 0.24 })
+            local col = isArrow and { 0.72, 0.70, 0.58 } or { 0.55, 0.75, 0.3 }
+            self:spawnParticles(nx, ny, 5, { col = col, spread = 70, life = 0.24 })
         end
-        -- 命中玩家
-        if not dead and not p.dead then
-            local dx, dy = nx - p.x, ny - (p.y - p.h * 0.5)
-            if dx * dx + dy * dy < 12 * 12 then
-                if p:hurt(pr.dmg, (p.x > nx) and 1 or -1) then
-                    dead = true
-                    self:hitStop(0.04)
-                    self.cam:kick(2, 0.16)
-                    self:spawnParticles(nx, ny, 8, { col = { 0.6, 0.85, 0.35 }, spread = 110 })
+
+        if not dead and pr.hostile then
+            -- 命中玩家
+            if not p.dead then
+                local dx, dy = nx - p.x, ny - (p.y - p.h * 0.5)
+                if dx * dx + dy * dy < 12 * 12 then
+                    if p:hurt(pr.dmg, (p.x > nx) and 1 or -1) then
+                        dead = true
+                        self:hitStop(0.04)
+                        self.cam:kick(2, 0.16)
+                        self:spawnParticles(nx, ny, 8, { col = { 0.6, 0.85, 0.35 }, spread = 110 })
+                    end
+                end
+            end
+
+        elseif not dead then
+            -- 玩家的箭：打怪、打 Boss。用「点 vs 矩形外扩 4px」而不是圆，
+            -- 因为箭是一根细长的东西，用圆判定会让它「擦着翅膀过去却没中」
+            local hit = nil
+            for j = 1, #self.mobs do
+                local m = self.mobs[j]
+                if m:alive() and not pr.hitSet[m] then
+                    if nx > m.x - m.w * 0.5 - 4 and nx < m.x + m.w * 0.5 + 4
+                        and ny > m.y - m.h - 4 and ny < m.y + 4 then
+                        hit = m
+                        break
+                    end
+                end
+            end
+            if hit then
+                pr.hitSet[hit] = true
+                dead = true
+                local dir = (hit.x >= nx) and 1 or -1
+                hit:hurt(pr.dmg, dir, pr.poise)
+                if pr.element then Status.apply(hit, pr.element, pr.elementLv) end
+                if self.resolved and self.resolved.leech and self.resolved.leech > 0 and not p.dead then
+                    p:heal(self.resolved.leech)
+                end
+                self:hitStop(0.03)
+                self.cam:kick(1.4, 0.12)
+                self:onHit(hit, pr.dmg, dir, self.resolved, false)
+            else
+                local b = self.boss
+                if b and b:alive() and not b.underground and not pr.hitSet.boss then
+                    local bx0, by0, bx1, by1 = b:hitbox()
+                    if nx > bx0 and nx < bx1 and ny > by0 and ny < by1 then
+                        pr.hitSet.boss = true
+                        dead = true
+                        local res = b:hurt(pr.dmg, (b.x >= nx) and 1 or -1, pr.poise, false)
+                        if pr.element then Status.apply(b, pr.element, pr.elementLv) end
+                        self:onBossHit(b, pr.dmg, res, false)
+                    end
                 end
             end
         end
@@ -380,10 +567,15 @@ end
 
 -- ---------------------------------------------------------------- 怪物
 function Game:updateMobs(dt)
+    -- 记下进入这一帧时的数量：循环里可能因为「分裂」而往 self.mobs 追加新怪，
+    -- 边遍历边追加会让 #self.mobs 在循环中途变化，行为不可预测。
+    -- 先处理旧的一批，结束后再把新生的接回来
+    local n = #self.mobs
     local keep = {}
-    for i = 1, #self.mobs do
+    for i = 1, n do
         local m = self.mobs[i]
         m:update(self, dt)
+        if m.dead then self:onMobDeath(m) end
         -- 死透了（尸体动画播完）才移除
         local gone = m.dead and m.deadT > 0.55
         -- 掉出世界或离玩家太远的怪直接回收，防止越积越多
@@ -391,6 +583,9 @@ function Game:updateMobs(dt)
         local dy = m.y - self.player.y
         if dx * dx + dy * dy > 2400 * 2400 then gone = true end
         if not gone then keep[#keep + 1] = m end
+    end
+    for i = n + 1, #self.mobs do
+        keep[#keep + 1] = self.mobs[i]
     end
     self.mobs = keep
 end
@@ -426,12 +621,20 @@ function Game:trySpawn(dt)
     else
         kind = roll < 0.28 and "crawler" or (roll < 0.52 and "blob" or (roll < 0.8 and "golem" or "flyer"))
     end
-    -- 精英：8% 概率，只在中深层出现
-    local elite = depth > 45 and ((self.time * 13) % 1) < 0.08
-    self.mobs[#self.mobs + 1] = Mob.new(kind, sx, gy, { elite = elite })
+    -- 精英：10% 概率，只在中深层出现。
+    -- 词缀按时间做确定性轮换，所以同一局里不会一直是「爆裂」——
+    -- 玩家打久了会依次遇到五种，从而学会五种应对方式
+    local opts = {}
+    if depth > 45 and ((self.time * 13) % 1) < 0.10 then
+        local idx = 1 + math.floor((self.time * 7919) % #Mob.AFFIX_ORDER)
+        opts.affix = Mob.AFFIX_ORDER[idx]
+    end
+    self.mobs[#self.mobs + 1] = Mob.new(kind, sx, gy, opts)
 end
 
--- ---------------------------------------------------------------- 合成
+-- ---------------------------------------------------------------- 合成 / 锻造
+
+--- 消耗品配方（口粮之类）。武器不再走这里——它们走 forge。
 -- 成功返回 true, nil；失败返回 false, 原因
 function Game:craft(id)
     local r = Recipes.get(id)
@@ -445,22 +648,15 @@ function Game:craft(id)
     end
 
     local e = r.effect
-    if e.kind == "weapon" then
-        self.weaponSpec = {
-            class = e.weapon, bladeTier = e.tier, hiltTier = e.tier, coreTier = e.tier,
-            bladeMat = e.material, hiltMat = e.tier >= 2 and "iron" or "wood",
-        }
-        self.player.weapon = Weapon.build(self.weaponSpec)
-        self.player.attackKind = e.weapon
-        self.player.attackMat = e.material
-        -- 换了更强的武器，镐也跟着升一级：否则玩家打到铁却挖不动晶簇，
-        -- 会被迫在武器和工具之间二选一，这不是我想让玩家纠结的地方
-        if e.tier > self.player.pick.tier then
-            self.player.pick.tier = e.tier
-            self.player.pick.eff = 1.0 + (e.tier - 1) * 0.45
-        end
-    elseif e.kind == "heal" then
+    if e.kind == "heal" then
         self.player:heal(e.amount)
+    elseif e.kind == "weapon" then
+        -- 兼容旧配方：一条配方直接给一把武器，内部仍然走 equip
+        self:equip({
+            class = e.weapon, bladeMat = e.material, bladeTier = e.tier,
+            hilt = "wood", hiltTier = e.tier, core = "none", coreTier = 0,
+            affixes = {}, seed = 1,
+        })
     end
     self.stats.crafted = (self.stats.crafted or 0) + 1
     return true
@@ -470,6 +666,26 @@ end
 function Game:canCraft(id)
     local r = Recipes.get(id)
     return r ~= nil and Recipes.canCraft(r, self.inv)
+end
+
+--[[
+    锻造。spec = { class, bladeMat, hilt, core }，seed 可选（测试用）。
+    返回 ok, err, affixes
+
+    注意这是**重铸**也是「第一次造」——同一个接口。
+    玩家想刷词条就再点一次，材料够就行。刻意不做「洗练石」之类的中间道具：
+    多一层货币只会让「我再试一次」这个动作多一次犹豫。
+]]
+function Game:forge(spec, seed)
+    return Forge.assemble(self, spec, seed)
+end
+
+-- 锻造预览（不消耗材料）
+function Game:previewForge(spec)
+    local r = Forge.preview(spec)
+    r.canMake = Forge.canAssemble(spec, self.inv)
+    r.missing = r.canMake and "" or Forge.missing(spec, self.inv)
+    return r
 end
 
 -- ---------------------------------------------------------------- Boss
@@ -512,6 +728,7 @@ function Game:serialize()
         },
         weapon = self.weaponSpec,
         inv = inv,
+        forgeCount = self.forgeCount,
         edits = self.world.edits,
         boss = self.boss and {
             hp = self.boss.hp, phase = self.boss.phase, defeated = self.bossDefeated,
@@ -538,10 +755,7 @@ function Game:applySave(data)
     p.pick.eff = pd.pickEff or p.pick.eff
 
     if data.weapon then
-        self.weaponSpec = data.weapon
-        p.weapon = Weapon.build(self.weaponSpec)
-        p.attackKind = self.weaponSpec.class
-        p.attackMat = self.weaponSpec.bladeMat
+        self:equip(data.weapon)
     end
 
     if data.inv then
@@ -552,6 +766,7 @@ function Game:applySave(data)
     end
 
     if data.stats then self.stats = data.stats end
+    if data.forgeCount then self.forgeCount = data.forgeCount end
 
     if data.boss then
         self:summonBoss()
@@ -649,8 +864,13 @@ function Game:update(dt, input)
         end
     end
 
+    -- 瞄准点（世界坐标）。弓用它决定箭飞向哪，近战不用。
+    -- 每帧都更新，而不是开火那一帧才读：这样切武器时准星不会「先指错一下」
+    local awx, awy = self:mouseWorld(mx, my)
+    self.aim.x, self.aim.y = awx, awy
+
     if digDown and not aimMine and p.attackT <= 0 and not p.dead then
-        Combat.start(p, input.attackKind or p.attackKind or "sword", p.attackMat or "copper")
+        Combat.start(p, input.weapon or self.resolved)
     end
 
     local needHold = inCombat and 0.30 or 0

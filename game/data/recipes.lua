@@ -1,11 +1,22 @@
 --[[
-    game/data/recipes.lua —— 合成配方
+    game/data/recipes.lua —— 消耗品配方
 
-    M1 只保留「挖到的东西能变成战斗力」这一条主线的配方。
-    设计文档里 120 条配方的量放在 M2，现在多一条都是负担。
+    M1 这里还放着四条武器配方。M2 把它们全删了，原因不是「功能挪走了」，
+    而是**两条并存的路线会互相污染**：
 
-    配方结构刻意做成数据而不是函数：以后要加工作台等级、解锁条件、
-    配方书 UI，都是往表里加字段，不用改逻辑。
+        如果既有「点一下得到铁剑」，又有「选部件造铁剑」，
+        玩家会永远用前者，因为前者更便宜也更快。
+        于是部件系统就变成装饰，锻造 UI 也就没人打开。
+
+    所以现在的分工很硬：
+        武器  → 只能锻造（game/core/forge.lua）
+        消耗品 → 只能按配方做（这个文件）
+
+    消耗品保留配方形态是合理的：口粮不需要「选柄选芯」，
+    它就是一个「2 个甲壳换 40 血」的兑换，加选择反而是噪音。
+
+    配方结构做成数据而不是函数：以后要加工作台等级、解锁条件、配方书 UI，
+    都是往表里加字段，不用改逻辑。
 ]]
 
 local R = {}
@@ -13,41 +24,27 @@ local R = {}
 -- 顺序就是 UI 里的显示顺序
 R.list = {
     {
-        id = "copper_sword",
-        name = "铜剑",
-        desc = "比初始木剑快一点，伤害 13 → 16",
-        cost = { copper = 3, wood = 2 },
-        -- effect 是给 Game 的指令，具体怎么应用由 Game 解释，
-        -- 这样数据层不需要知道武器系统长什么样
-        effect = { kind = "weapon", weapon = "sword", material = "copper", tier = 1 },
-    },
-    {
-        id = "iron_sword",
-        name = "铁剑",
-        desc = "伤害 16 → 18，刃更亮",
-        cost = { iron = 3, wood = 1 },
-        effect = { kind = "weapon", weapon = "sword", material = "iron", tier = 2 },
-    },
-    {
-        id = "iron_axe",
-        name = "铁斧",
-        desc = "慢但破韧 30，专治石傀儡",
-        cost = { iron = 4, wood = 2 },
-        effect = { kind = "weapon", weapon = "axe", material = "iron", tier = 2 },
-    },
-    {
-        id = "crystal_blade",
-        name = "晶刃",
-        desc = "伤害 24，打 Boss 的答案",
-        cost = { crystal = 3, iron = 2 },
-        effect = { kind = "weapon", weapon = "sword", material = "crystal", tier = 3 },
-    },
-    {
         id = "ration",
         name = "洞穴口粮",
-        desc = "回复 40 生命",
+        desc = "回复 40 生命。便宜，随处可做",
         cost = { chitin = 2, membrane = 1 },
+        -- effect 是给 Game 的指令，具体怎么应用由 Game 解释，
+        -- 这样数据层不需要知道玩家对象长什么样
         effect = { kind = "heal", amount = 40 },
+    },
+    {
+        id = "elixir",
+        name = "蚀液药",
+        desc = "回复 65 生命。毒囊换的，深层的保命件",
+        cost = { bile = 3, crystal = 1 },
+        effect = { kind = "heal", amount = 65 },
+    },
+    {
+        id = "hearth",
+        name = "火种",
+        desc = "回复 100 生命。要矿核碎屑，打 Boss 前备一份",
+        cost = { core_stone = 2, chitin = 3 },
+        effect = { kind = "heal", amount = 100 },
     },
 }
 

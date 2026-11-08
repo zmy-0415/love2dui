@@ -16,6 +16,7 @@
 ]]
 
 local World = require("game.core.world")
+local Status = require("game.core.status")
 
 local Boss = {}
 Boss.__index = Boss
@@ -73,6 +74,14 @@ end
 
 function Boss:hurt(dmg, dir, poise, weak)
     if self.dead then return false end
+
+    -- 雷痕易伤，与普通怪一致：所有伤害来源都能吃到
+    local vuln = Status.vulnMul(self)
+    if vuln ~= 1 then
+        dmg = dmg * vuln
+        Status.consumeShock(self)
+    end
+
     self.hp = self.hp - dmg
     self.flash = 0.13
 
@@ -254,6 +263,20 @@ function Boss:update(game, dt)
     if self.dead then
         self.deadT = self.deadT + dt
         return
+    end
+
+    -- 元素状态：燃烧/剧毒磨血在 Boss 身上同样生效。
+    -- 不这么做的话「炎芯」在整场 Boss 战里等于没词条，
+    -- 而打 Boss 恰恰是最需要持续输出的场景
+    if self.status then
+        Status.update(self, dt)
+        if self.hp <= 0 then
+            self.hp = 0
+            self.dead = true
+            self.deadT = 0
+            self.underground = false
+            return
+        end
     end
 
     local p = game.player

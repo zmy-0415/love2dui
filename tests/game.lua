@@ -217,7 +217,7 @@ function M.test(env)
         -- 一次挥砍只结算一次：继续按住会再次挥砍，但不能是同一刀
         local hpAfterFirst = m.hp
         local dmg = hp0 - hpAfterFirst
-        check("单次伤害等于武器伤害", math.abs(dmg - Weapons.damage("sword", "copper")) < 0.01)
+        check("单次伤害等于当前武器的伤害", math.abs(dmg - game.resolved.damage) < 0.01)
 
         -- 同一个 hitSet 内不会重复命中
         p.hitSet = { [m] = true }
@@ -263,31 +263,310 @@ function M.test(env)
         check("死后不再受伤", not p:hurt(10, 1))
     end
 
-    -- ================================================================ 合成
+    -- ================================================================ 武器品类
+    -- M2 的重点不是「八把武器的伤害谁高」，而是「八把武器分别解决什么问题」。
+    -- 所以这里的断言全部落在结构和行为上：射程、后摇、衰减、击退、是否远程。
+    do
+        local T = Weapons.types
+        check("八品类齐全", (function()
+            local n = 0
+            for _ in pairs(T) do n = n + 1 end
+            return n == 8
+        end)())
+
+        -- 长枪是全表唯一「贴身打不到」的武器：判定框从身体外侧才开始
+        check("长枪贴身打不到（back 为负）", T.spear.back < 0)
+        check("长枪射程最长", T.spear.reach >= T.sword.reach and T.spear.reach > T.axe.reach)
+        check("长枪判定最窄", T.spear.halfH < T.great.halfH)
+
+        -- 匕首：总时长最短，且出刀几乎不减速
+        check("匕首总时长最短", Weapons.total("dagger") < Weapons.total("sword"))
+        check("匕首出刀不减速", T.dagger.mobility > 0.7)
+        check("战锤出刀几乎钉住", T.hammer.mobility < 0.25)
+        check("战锤击退最强", T.hammer.knock > T.great.knock)
+
+        -- 镰刀：群体武器，第二个目标不衰减
+        check("镰刀多目标不衰减", T.sickle.falloff >= 1.0)
+        check("剑打第二只衰减", T.sword.falloff < 1.0)
+
+        -- 弓：唯一的远程
+        check("弓是远程武器", (T.bow.ranged or 0) > 0)
+        check("弓没有近战判定", T.bow.reach == 0)
+
+        -- 大剑比斧慢但比斧宽
+        check("大剑比斧慢", Weapons.total("great") > Weapons.total("axe"))
+        check("大剑判定比斧宽", T.great.halfH >= T.axe.halfH)
+    end
+
+    -- ================================================================ 部件与词条
+    do
+        local Parts = require("game.data.parts")
+        local Affix = require("game.core.affix")
+        local Forge = require("game.core.forge")
+
+        -- 柄：同一把刃，换柄只改速度与击退，不改品类与射程
+        local bone = Weapons.resolve({ class = "axe", bladeMat = "iron", hilt = "bone" })
+        local iron = Weapons.resolve({ class = "axe", bladeMat = "iron", hilt = "iron" })
+        check("骨柄比铁柄快", bone.dur < iron.dur)
+        check("铁柄比骨柄击退高", iron.knock > bone.knock)
+        check("换柄不改射程", bone.reach == iron.reach)
+        check("换柄不改武器品类", bone.kind == "axe" and iron.kind == "axe")
+
+        -- 芯：只换元素，不改伤害（否则「芯」就是第二个刃，选择失去意义）
+        local noCore = Weapons.resolve({ class = "sword", bladeMat = "iron", core = "none" })
+        local ember = Weapons.resolve({ class = "sword", bladeMat = "iron", core = "ember" })
+        local frost = Weapons.resolve({ class = "sword", bladeMat = "iron", core = "frost" })
+        check("无芯没有元素", noCore.element == nil)
+        check("炎芯附燃烧", ember.element == "burn")
+        check("霜芯附霜蚀", frost.element == "chill")
+        check("芯不改伤害", math.abs(noCore.damage - ember.damage) < 0.001)
+
+        -- resolve 必须可复现：存档只存 spec，读回来要得到同一把武器
+        local a = Weapons.resolve({ class = "spear", bladeMat = "crystal", hilt = "bone", core = "arc" })
+        local b = Weapons.resolve({ class = "spear", bladeMat = "crystal", hilt = "bone", core = "arc" })
+        check("同 spec 两次解析结果一致", a.damage == b.damage and a.dur == b.dur)
+
+        -- 词条：同种子同结果，不同种子不同结果
+        local r1 = Affix.roll(12345, 2)
+        local r2 = Affix.roll(12345, 2)
+        check("同种子滚出同样词条", #r1 == 2 and r1[1] == r2[1] and r1[2] == r2[2])
+        check("词条不重复", r1[1] ~= r1[2])
+        local seen = {}
+        for s = 1, 40 do
+            local rr = Affix.roll(s * 7919, 1)
+            if rr[1] then seen[rr[1]] = true end
+        end
+        local kinds = 0
+        for _ in pairs(seen) do kinds = kinds + 1 end
+        check("不同种子会滚出不同词条", kinds > 1)
+
+        -- 词条真的生效：锋利 +18%
+        local bare = Weapons.resolve({ class = "sword", bladeMat = "iron", affixes = {} })
+        local sharp = Weapons.resolve({ class = "sword", bladeMat = "iron", affixes = { "sharp" } })
+        check("锋利词条提高伤害", math.abs(sharp.damage - bare.damage * 1.18) < 0.001)
+
+        -- 引燃：无芯也附燃烧；有芯则升一层
+        local k0 = Weapons.resolve({ class = "sword", core = "none", affixes = { "kindle" } })
+        local k1 = Weapons.resolve({ class = "sword", core = "ember", affixes = { "kindle" } })
+        check("引燃给无芯武器附燃烧", k0.element == "burn")
+        check("引燃让已有元素升层", k1.elementLv == 2)
+
+        -- 词条数量按投入档位
+        check("低档组合没有词条位", Forge.affixCount({ bladeMat = "copper", hilt = "wood", core = "none" }) == 0)
+        check("中档组合 1 条词条位", Forge.affixCount({ bladeMat = "iron", hilt = "bone", core = "ember" }) == 1)
+        check("高档组合 2 条词条位", Forge.affixCount({ bladeMat = "void", hilt = "void", core = "arc" }) == 2)
+
+        -- 成本必须随部件变化
+        local c0 = Forge.cost({ bladeMat = "copper", hilt = "wood", core = "none" })
+        local c1 = Forge.cost({ bladeMat = "crystal", hilt = "iron", core = "arc" })
+        check("高级部件的成本更高", (c1.crystal or 0) > (c0.crystal or 0))
+    end
+
+    -- ================================================================ 元素状态
+    do
+        local Status = require("game.core.status")
+
+        -- 燃烧：可以致死
+        local m = Mob.new("crawler", 100, 100)
+        m.status = nil
+        m.hp = 3
+        Status.apply(m, "burn", 1)
+        for _ = 1, 120 do Status.update(m, 1 / 60) end
+        check("燃烧会致死", m.hp <= 0)
+
+        -- 剧毒：不致死，永远留 1 血
+        local m2 = Mob.new("crawler", 100, 100)
+        m2.hp = 3
+        Status.apply(m2, "venom", 1)
+        for _ = 1, 400 do Status.update(m2, 1 / 60) end
+        check("剧毒不致死", m2.hp == 1)
+        check("剧毒会一直挂着直到超时", m2.status == nil or m2.status.venom == nil)
+
+        -- 霜蚀：减速
+        local m3 = Mob.new("crawler", 100, 100)
+        check("没状态时速度不变", Status.speedMul(m3) == 1)
+        Status.apply(m3, "chill", 1)
+        check("霜蚀会减速", Status.speedMul(m3) < 1)
+
+        -- 雷痕：易伤，且一次性
+        local m4 = Mob.new("golem", 100, 100)
+        check("没雷痕时无易伤", Status.vulnMul(m4) == 1)
+        Status.apply(m4, "shock", 1)
+        check("雷痕提高受伤", Status.vulnMul(m4) > 1)
+        Status.consumeShock(m4)
+        check("雷痕用掉就没了", Status.vulnMul(m4) == 1)
+
+        -- 状态刷新是「取长」不是「叠加」：否则两把同元素武器会变成四倍
+        local m5 = Mob.new("crawler", 100, 100)
+        Status.apply(m5, "burn", 1)
+        local t1 = m5.status.burn.t
+        Status.apply(m5, "burn", 1)
+        check("同状态不叠加层数", m5.status.burn.lv == 1)
+        check("同状态刷新不延长时间上限", m5.status.burn.t <= t1 + 0.001)
+
+        -- 剧毒击杀不了，但玩家补一刀就能收掉
+        local m6 = Mob.new("crawler", 100, 100)
+        m6.hp = 2
+        Status.apply(m6, "venom", 1)
+        for _ = 1, 400 do Status.update(m6, 1 / 60) end
+        check("剧毒压到 1 血后停手", m6.hp == 1)
+        m6:hurt(5, 1, 0)
+        check("补一刀才能杀死", m6.dead)
+    end
+
+    -- ================================================================ 多目标衰减
     do
         local game = Game.new({ w = 480, h = 270, seed = 20261108 })
-        check("没材料时做不出来", not game:craft("iron_sword"))
-        check("做失败不扣材料", game.inv:count("iron") == 0)
+        for _ = 1, 20 do game:update(1 / 60, {}) end
+        local p = game.player
+        p.facing = 1
 
-        game.inv:add("iron", 5)
-        game.inv:add("wood", 3)
-        check("材料够了就能做", game:craft("iron_sword"))
-        check("合成的材料被扣除", game.inv:count("iron") == 2 and game.inv:count("wood") == 2)
-        check("合成后武器变成铁剑", game.weaponSpec.bladeMat == "iron")
-        check("合成后镐也升级了", game.player.pick.tier >= 2)
-        check("合成后伤害变高",
-            Weapons.damage("sword", game.player.attackMat) > Weapons.damage("sword", "copper"))
+        -- 用镰刀（不衰减）打三只贴在一起的怪
+        game:equip({ class = "sickle", bladeMat = "copper", hilt = "wood", core = "none" })
+        local ms = {}
+        for i = 1, 3 do
+            local m = Mob.new("crawler", p.x + 24 + i * 2, p.y)
+            game.mobs[#game.mobs + 1] = m
+            ms[i] = m
+        end
+        local hp0 = {}
+        for i = 1, 3 do hp0[i] = ms[i].hp end
+        for _ = 1, 30 do game:update(1 / 60, { dig = true, mouseX = 240, mouseY = 120 }) end
+        check("镰刀一次打到三只", ms[1].hp < hp0[1] and ms[2].hp < hp0[2] and ms[3].hp < hp0[3])
+        local d1 = hp0[1] - ms[1].hp
+        local d3 = hp0[3] - ms[3].hp
+        check("镰刀第三个目标不衰减", math.abs(d1 - d3) < 0.01)
 
-        -- 斧与剑的帧数据必须不同，否则「换武器」只是换个数字
-        check("斧比剑慢", Weapons.total("axe") > Weapons.total("sword"))
-        check("斧破韧更高", Weapons.types.axe.poise > Weapons.types.sword.poise)
-        check("斧单次伤害更高", Weapons.types.axe.damage > Weapons.types.sword.damage)
+        -- 用大剑（衰减 0.80）打同样三只
+        local game2 = Game.new({ w = 480, h = 270, seed = 20261108 })
+        for _ = 1, 20 do game2:update(1 / 60, {}) end
+        local p2 = game2.player
+        p2.facing = 1
+        game2:equip({ class = "great", bladeMat = "copper", hilt = "wood", core = "none" })
+        local gs = {}
+        for i = 1, 3 do
+            local m = Mob.new("crawler", p2.x + 24 + i * 2, p2.y)
+            game2.mobs[#game2.mobs + 1] = m
+            gs[i] = m
+        end
+        local gh0 = {}
+        for i = 1, 3 do gh0[i] = gs[i].hp end
+        for _ = 1, 30 do game2:update(1 / 60, { dig = true, mouseX = 240, mouseY = 120 }) end
+        local g1 = gh0[1] - gs[1].hp
+        local g3 = gh0[3] - gs[3].hp
+        check("大剑第三个目标有衰减", g3 < g1 * 0.75)
+    end
 
-        -- 治疗配方
+    -- ================================================================ 精英词缀
+    do
+        local iron = Mob.new("golem", 100, 100, { affix = "iron" })
+        local plain = Mob.new("golem", 100, 100)
+        check("铁壁韧性更高", iron.poiseMax > plain.poiseMax * 2)
+        check("铁壁血量更高", iron.maxHp > plain.maxHp)
+
+        local swift = Mob.new("crawler", 100, 100, { affix = "swift" })
+        local plain2 = Mob.new("crawler", 100, 100)
+        check("迅捷移速更快", swift.speed > plain2.speed)
+
+        local regen = Mob.new("crawler", 100, 100, { affix = "regen" })
+        check("再生有回血系数", (regen.regen or 0) > 0)
+
+        local split = Mob.new("crawler", 100, 100, { affix = "split" })
+        check("分裂记录了分裂数", split.affix == "split")
+
+        local burst = Mob.new("crawler", 100, 100, { affix = "burst" })
+        check("爆裂被标记为精英", burst.elite and burst.affix == "burst")
+
+        -- 分裂出来的小怪不再分裂，否则会无限增殖
+        local small = Mob.new("crawler", 100, 100, { small = true })
+        check("小怪不会分裂", small.noSplit == true)
+        check("小怪不算精英", not small.elite)
+
+        -- 铁壁的击退抗性真的生效
+        local k1 = Mob.new("crawler", 100, 100)
+        k1:hurt(1, 1, 0)
+        local k2 = Mob.new("crawler", 100, 100, { affix = "iron" })
+        k2:hurt(1, 1, 0)
+        check("铁壁击退更小", k2.vx < k1.vx)
+    end
+
+    -- ================================================================ 合成 / 锻造
+    do
+        local game = Game.new({ w = 480, h = 270, seed = 20261108 })
+        check("没材料时锻不出来", not game:forge({ class = "sword", bladeMat = "iron" }))
+        check("锻造失败不扣材料", game.inv:count("iron") == 0)
+
+        -- 铜剑：铜 4 + 木 1 + 柄木 2
+        game.inv:add("copper", 10)
+        game.inv:add("wood", 10)
+        local ok, err, affixes = game:forge({ class = "sword", bladeMat = "copper", hilt = "wood", core = "none" })
+        check("材料够了就能锻造", ok == true)
+        check("锻造扣掉了材料", game.inv:count("copper") == 6)
+        check("锻造后武器换成铜剑", game.weaponSpec.bladeMat == "copper")
+        check("低档组合没有词条", #affixes == 0)
+        check("锻造计数增加", game.forgeCount == 1)
+
+        -- 铁剑 + 骨柄 → 1 条词条
+        game.inv:add("iron", 10)
+        game.inv:add("chitin", 10)
+        local ok2, _, af2 = game:forge({ class = "sword", bladeMat = "iron", hilt = "bone", core = "none" })
+        check("中档组合能锻出来", ok2 == true)
+        check("中档组合有 1 条词条", #af2 == 1)
+        check("锻造后镐跟着升级", game.player.pick.tier >= 2)
+        check("锻造后伤害变高", game.resolved.damage > Weapons.resolve({ class = "sword", bladeMat = "copper" }).damage)
+
+        -- 重铸：同一套件再锻一次，词条会变（材料够的前提下）
+        game.inv:add("iron", 20)
+        game.inv:add("chitin", 20)
+        game.inv:add("wood", 20)
+        local ok3, _, af3 = game:forge({ class = "sword", bladeMat = "iron", hilt = "bone", core = "none" })
+        check("重铸成功", ok3 == true)
+        check("重铸会换一批词条",
+            af3[1] ~= af2[1] or game.forgeCount == 3)
+
+        -- 指定 seed 时结果完全可复现（测试与回放要用）
+        game.inv:add("iron", 20)
+        game.inv:add("chitin", 20)
+        game.inv:add("wood", 20)
+        local _, _, a1 = game:forge({ class = "sword", bladeMat = "iron", hilt = "bone" }, 999)
+        game.inv:add("iron", 20)
+        game.inv:add("chitin", 20)
+        game.inv:add("wood", 20)
+        local _, _, a2 = game:forge({ class = "sword", bladeMat = "iron", hilt = "bone" }, 999)
+        check("同 seed 词条完全一致", a1[1] == a2[1])
+
+        -- 治疗配方仍然走 craft
         game.player.hp = 40
         game.inv:add("chitin", 2)
         game.inv:add("membrane", 1)
         check("口粮能回血", game:craft("ration") and game.player.hp == 80)
+        check("未知配方返回失败", not game:craft("iron_sword"))
+    end
+
+    -- ================================================================ 弓
+    do
+        local game = Game.new({ w = 480, h = 270, seed = 20261108 })
+        for _ = 1, 20 do game:update(1 / 60, {}) end
+        local p = game.player
+        p.facing = 1
+        game:equip({ class = "bow", bladeMat = "iron", hilt = "wood", core = "none" })
+
+        -- 正前方放一只怪，按住左键应该射箭并命中。
+        -- 用 spawnMob 贴地，而不是直接给 y：地形起伏时直接给坐标会把它埋进石头里
+        local m = game:spawnMob("golem", p.x + 120, p.y)
+        local hp0 = m.hp
+
+        local fired = false
+        -- mouseY 取屏幕中线，箭就是水平飞的；否则会朝地面扎进去
+        for _ = 1, 45 do
+            game:update(1 / 60, { dig = true, mouseX = game.vw * 0.5 + 100, mouseY = game.vh * 0.5 })
+            if #game.projectiles > 0 then fired = true end
+        end
+        check("弓会发射投射物", fired)
+        check("箭能打中远处的怪", m.hp < hp0)
+
+        -- 箭不能打到自己
+        check("玩家不会被自己的箭打中", p.hp == p.maxHp)
     end
 
     -- ================================================================ Boss
@@ -345,9 +624,12 @@ function M.test(env)
     -- ================================================================ 存档
     do
         local game = Game.new({ w = 480, h = 270, seed = 20261108 })
-        game.inv:add("iron", 6)
-        game.inv:add("wood", 4)
-        game:craft("iron_sword")
+        game.inv:add("iron", 20)
+        game.inv:add("chitin", 20)
+        game.inv:add("wood", 20)
+        game.inv:add("copper", 10)
+        local forgedOk = game:forge({ class = "spear", bladeMat = "iron", hilt = "bone", core = "ember" }, 4242)
+        check("测试前置：武器的确被锻出来了", forgedOk == true)
         game.world:set(40, 30, Tiles.AIR)
         game.world:set(41, 30, Tiles.id("copper"))
         game.player.hp = 63
@@ -364,7 +646,22 @@ function M.test(env)
             save = data,
         })
         check("读档恢复背包", restored.inv:count("iron") == game.inv:count("iron"))
-        check("读档恢复武器", restored.weaponSpec.bladeMat == "iron")
+        check("读档恢复武器刃材", restored.weaponSpec.bladeMat == "iron")
+        check("读档恢复武器品类", restored.weaponSpec.class == "spear")
+        check("读档恢复柄", restored.weaponSpec.hilt == "bone")
+        check("读档恢复芯", restored.weaponSpec.core == "ember")
+        -- 这是 M2 最要紧的一条：词条必须原样回来。
+        -- 否则「我刷到的那把好剑」在重启后变成另一把，整个刷装备循环就断了
+        check("读档恢复词条", (function()
+            local a, b = game.weaponSpec.affixes or {}, restored.weaponSpec.affixes or {}
+            if #a ~= #b then return false end
+            for i = 1, #a do if a[i] ~= b[i] then return false end end
+            return true
+        end)())
+        check("读档后解析出的数值一致",
+            math.abs(restored.resolved.damage - game.resolved.damage) < 0.001
+            and math.abs(restored.resolved.dur - game.resolved.dur) < 0.001)
+        check("读档恢复锻造计数", restored.forgeCount == game.forgeCount)
         check("读档恢复血量", restored.player.hp == 63)
         check("读档恢复地形改动 A", restored.world:get(40, 30) == Tiles.AIR)
         check("读档恢复地形改动 B", restored.world:get(41, 30) == Tiles.id("copper"))

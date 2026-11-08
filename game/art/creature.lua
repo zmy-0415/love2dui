@@ -494,9 +494,14 @@ function C.draw(g, skel, x, y, facing, anim, t, opts)
 
     -- 武器挂在近侧手上。此时坐标系是角色本地（面朝 +X），
     -- 所以直接取 hand 的末端就能握住，flip 由外层 scale(-1,1) 处理
+    --
+    -- weaponScale 是 M2 加的：八品类里有长枪和战锤这种「体型靠武器表达」的东西，
+    -- 按同一比例画，长枪看起来和匕首差不多长——玩家就分不出手里拿的是什么。
+    -- 放在这里而不是改武器本身的长度，是因为图鉴/UI 里的武器要用原尺寸
     if opts.weapon then
         local hx, hy, ha = Rig.tip(skel, pose, "hand_near")
-        Weapon.draw(g, opts.weapon, hx, hy, ha + (opts.weaponAngle or 0), 1, opts)
+        Weapon.draw(g, opts.weapon, hx, hy, ha + (opts.weaponAngle or 0),
+            opts.weaponScale or 1, opts)
     end
 
     g.pop()

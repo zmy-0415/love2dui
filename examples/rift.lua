@@ -25,6 +25,10 @@ local Progress = require("lumi.widgets.progress")
 
 local Game = require("game.game")
 local Recipes = require("game.data.recipes")
+local Forge = require("game.core.forge")
+local Parts = require("game.data.parts")
+local Weapons = require("game.data.weapons")
+local Affix = require("game.core.affix")
 
 local M = { title = "裂界 · 垂直切片", clear = false }
 
@@ -34,10 +38,15 @@ local prevJump = false
 local prevPlace = false
 local prevReset = false
 local prevCraft = false
+local prevForge = false
 local uiRef
 local wasDead = false
 local wasVictory = false
 local saveTimer = 0
+
+-- 锻造台的选择状态。放在模块级而不是 dialog 里：
+-- 玩家关掉弹窗再打开，应该还停在上次选的位置，而不是被重置成铜剑
+local forgeSpec = { class = "sword", bladeMat = "copper", hilt = "wood", core = "none" }
 
 -- ---------------- 输入采集 ----------------
 
@@ -138,6 +147,162 @@ openCraft = function()
     end)
 end
 
+-- ---------------- 锻造台 ----------------
+
+local function fmtCost(cost)
+    local parts = {}
+    for k, n in pairs(cost or {}) do
+        parts[#parts + 1] = string.format("%s×%d", k, n)
+    end
+    if #parts == 0 then return "无" end
+    table.sort(parts)
+    return table.concat(parts, "  ")
+end
+
+-- 一排可选项。选中的用 filled，其余 outlined——
+-- 这样「现在选的是哪个」在扫一眼时就能看出来，不用去读文字
+local function pickChips(p, title, items, cur, onPick, nameOf)
+    p:label(title, { variant = "caption", color = "muted" })
+    p:box({ direction = "row", gap = 6, wrap = true }, function(row)
+        for _, it in ipairs(items) do
+            local sel = (it.id == cur)
+            row:button(nameOf(it), {
+                variant = sel and "filled" or "outlined",
+                onClick = function() onPick(it.id) end,
+            })
+        end
+    end)
+end
+
+local openForge
+
+openForge = function()
+    local ui = uiRef
+    if not ui then return end
+    local pv = game:previewForge(forgeSpec)
+    -- 每次选择都重建弹窗。这看着笨，但比手动改 30 个按钮的状态可靠得多，
+    -- 而且弹窗重建的成本在这个量级下完全感觉不到
+    local function rebind()
+        ui:closeAllOverlays()
+        openForge()
+    end
+
+    ui:dialog({ title = "锻造台", closable = true }, function(p)
+        p:label("左侧选部件，右侧是这一刀的全部数值。同一套部件可以反复重铸刷词条。",
+            { variant = "caption", color = "muted", wrap = true })
+
+        p:box({ direction = "row", gap = 18, align = "start" }, function(row)
+            -- ---------------- 左：选部件 ----------------
+            row:box({ direction = "column", gap = 10, w = 460 }, function(col)
+                pickChips(col, "刃材 · 决定伤害与破韧（挖矿换）", Forge.blades, forgeSpec.bladeMat,
+                    function(id) forgeSpec.bladeMat = id rebind() end,
+                    function(it) return it.name end)
+
+                pickChips(col, "品类 · 决定判定框与节奏", Forge.classes, forgeSpec.class,
+                    function(id) forgeSpec.class = id rebind() end,
+                    function(it) return it.name end)
+
+                -- 当前品类的定位提示。八把武器的差别不在数字上，
+                -- 所以必须有一句话把它讲出来，否则玩家只会照着伤害选
+                do
+                    local cur
+                    for _, c in ipairs(Forge.classes) do
+                        if c.id == forgeSpec.class then cur = c break end
+                    end
+                    if cur then
+                        col:label("　" .. cur.hint, { variant = "caption", color = "accent" })
+                    end
+                end
+
+                pickChips(col, "柄 · 决定速度与击退（打怪换）", Parts.hilts, forgeSpec.hilt,
+                    function(id) forgeSpec.hilt = id rebind() end,
+                    function(it) return it.name end)
+
+                pickChips(col, "芯 · 决定命中附加（交叉换）", Parts.cores, forgeSpec.core,
+                    function(id) forgeSpec.core = id rebind() end,
+                    function(it) return it.name end)
+
+                do
+                    local core = Parts.core(forgeSpec.core)
+                    if core.desc then
+                        col:label("　" .. core.desc, { variant = "caption", color = "muted", wrap = true })
+                    end
+                end
+            end)
+
+            -- ---------------- 右：预览 ----------------
+            row:box({
+                direction = "column", gap = 6, w = 310, padding = 14,
+                bg = "surface", radius = "medium", border = "border",
+            }, function(col)
+                col:label(Weapons.label(pv), { variant = "subtitle" })
+
+                local function stat(name, val)
+                    col:box({ direction = "row", justify = "space-between" }, function(r)
+                        r:label(name, { variant = "caption", color = "muted" })
+                        r:label(val, { variant = "caption" })
+                    end)
+                end
+
+                stat("伤害", string.format("%.1f", pv.damage))
+                stat("前摇", string.format("%d ms", math.floor(pv.windup * 1000)))
+                stat("后摇", string.format("%d ms", math.floor(pv.recovery * 1000)))
+                stat("总时长", string.format("%d ms", math.floor(pv.dur * 1000)))
+                if pv.ranged then
+                    stat("射程", string.format("远程 %d", pv.ranged))
+                else
+                    stat("判定", string.format("%d ~ %d", pv.back, pv.reach))
+                end
+                stat("破韧", string.format("%.0f", pv.poise))
+                stat("击退", string.format("%.0f", pv.knock))
+                stat("出刀机动", string.format("%.0f%%", pv.mobility * 100))
+                if pv.element then
+                    stat("元素", pv.element)
+                end
+                stat("词条位", tostring(pv.affixCount))
+
+                col:divider()
+
+                col:label("材料：" .. fmtCost(pv.cost), { variant = "caption", wrap = true })
+                if not pv.canMake then
+                    col:label("缺 " .. pv.missing, { variant = "caption", color = "danger", wrap = true })
+                end
+
+                col:button(pv.canMake and "锻造" or "材料不足", {
+                    variant = pv.canMake and "filled" or "outlined",
+                    color = pv.canMake and "primary" or "muted",
+                    onClick = function()
+                        if not pv.canMake then
+                            ui:toast("缺 " .. pv.missing, "error")
+                            return
+                        end
+                        local ok, err, affixes = game:forge(forgeSpec)
+                        if not ok then
+                            ui:toast(err or "锻造失败", "error")
+                            return
+                        end
+                        local names = {}
+                        for _, id in ipairs(affixes or {}) do
+                            names[#names + 1] = Affix.name(id)
+                        end
+                        if #names > 0 then
+                            ui:toast("锻造成功 · " .. table.concat(names, " / "), "success")
+                        else
+                            ui:toast("锻造成功（这套部件没有词条位）", "success")
+                        end
+                        rebind()
+                    end,
+                })
+            end)
+        end)
+    end)
+end
+
+-- 暴露给测试与外部宿主：可以不按键、直接打开锻造台。
+-- 这不是为了测试硬塞的口子——宿主完全可能想在暂停菜单里挂一个「锻造」按钮
+M.openForge = function() return openForge() end
+M.openCraft = function() return openCraft() end
+
 -- ---------------- 构建 ----------------
 
 local function screenSize()
@@ -180,13 +345,29 @@ function M.build(ui, ctx)
         c:add(hud.invText)
     end)
 
-    -- 右下：操作与矿脉摘要
+    -- 右下：操作与当前武器
     ui:box({ direction = "column", gap = 6, align = "end" }, function(c)
+        hud.weaponText = Label.new({ text = "武器", variant = "caption", color = "accent" })
+        c:add(hud.weaponText)
         hud.pickText = Label.new({ text = "背包空", variant = "caption", color = "muted" })
         c:add(hud.pickText)
-        c:label("A/D 移动 · 空格跳 · 左键挖/砍 · 右键放 · C 合成 · R 重开",
+        c:label("A/D 移动 · 空格跳 · 左键挖/砍 · 右键放 · F 锻造 · C 合成 · R 重开",
             { variant = "caption", color = "muted" })
     end)
+end
+
+-- 当前武器的说明：名字 + 词条。玩家得随时知道自己手里是什么，
+-- 否则「刷到一把好的」这件事他自己都不知道
+local function weaponLine()
+    local r = game.resolved
+    local s = Weapons.label(r)
+    local affixes = game.weaponSpec and game.weaponSpec.affixes or {}
+    if #affixes > 0 then
+        local names = {}
+        for _, id in ipairs(affixes) do names[#names + 1] = Affix.name(id) end
+        s = s .. " · " .. table.concat(names, "/")
+    end
+    return s
 end
 
 -- ---------------- 每帧 ----------------
@@ -215,10 +396,15 @@ function M.update(dt)
 
     local input, shouldReset = readInput()
 
-    -- 合成面板
+    -- 合成面板（消耗品）
     local craftKey = anyKeyDown("c")
     if craftKey and not prevCraft then openCraft() end
     prevCraft = craftKey
+
+    -- 锻造台（武器）
+    local forgeKey = anyKeyDown("f")
+    if forgeKey and not prevForge then openForge() end
+    prevForge = forgeKey
 
     if shouldReset then
         game = Game.new({ w = game.vw, h = game.vh })
@@ -269,6 +455,13 @@ function M.update(dt)
         lastHud.inv = used
         hud.invText:setProp("text", string.format("背包 %d / %d", used, game.inv.size))
         hud.pickText:setProp("text", fmtInv())
+    end
+
+    -- 武器名只在真的换了武器时更新（锻造/读档），避免每帧拼字符串
+    local wline = weaponLine()
+    if wline ~= lastHud.weapon then
+        lastHud.weapon = wline
+        if hud.weaponText then hud.weaponText:setProp("text", wline) end
     end
 end
 

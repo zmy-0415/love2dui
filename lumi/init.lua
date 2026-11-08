@@ -7,7 +7,7 @@ local platform = require("lumi.platform")
 
 local lumi = {}
 
-lumi.version = "0.8.0"
+lumi.version = "0.9.0"
 
 --- 创建场景
 --  @param opts table 可选：

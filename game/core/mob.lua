@@ -13,10 +13,25 @@
     一个刻意的设计：所有怪在玩家离得远时只做巡逻，不追。
     这既是性能考虑（远处实体不进 AI），也是节奏考虑——
     玩家应该有「先观察、再决定打不打」的空间，而不是一进区域就被围。
+
+    ---- M2：精英词缀 ----
+
+    M1 只有一条「爆裂」，因为要先把「词缀能改变战斗行为」这件事验证掉。
+    M2 扩到五条，选词缀的标准是**每条都要让玩家改一次打法**，而不是改数值：
+
+        爆裂  死了炸一圈       → 砍死它的瞬间要后撤，所以「补刀顺序」变了
+        迅捷  移速 ×1.55       → 追不上，只能提前站位或用霜蚀
+        铁壁  韧性 ×2.6        → 剑砍不出硬直，必须换斧/锤
+        再生  每秒回 2% 血     → 打不快就白打，逼玩家放弃消耗战
+        分裂  死了变两只小的   → 单体武器打不完，只能换镰刀或远程
+
+    五条里没有一条是「+20% 血量」。那种词缀玩家根本看不出来，
+    只会觉得「这只怎么特别肉」，然后开始怀疑数值而不是调整打法。
 ]]
 
 local Physics = require("game.core.physics")
 local World = require("game.core.world")
+local Status = require("game.core.status")
 
 local Mob = {}
 Mob.__index = Mob
@@ -49,6 +64,49 @@ local SPEC = {
 }
 
 Mob.SPEC = SPEC
+
+--[[
+    五条精英词缀。字段全部是「行为参数」，没有一条直接加伤害——
+    加伤害的词缀只会让怪更烦，加行为的词缀才让玩家换招。
+]]
+Mob.AFFIX = {
+    burst = {
+        name = "爆裂",
+        hpMul = 2.2, dmgMul = 1.25, scaleMul = 1.3, poiseMul = 1.6,
+        radius = 74,          -- 死亡爆炸半径
+        desc = "死亡时炸一圈",
+    },
+    swift = {
+        name = "迅捷",
+        hpMul = 1.5, dmgMul = 1.1, scaleMul = 1.05, poiseMul = 1.0,
+        speedMul = 1.55, chaseMul = 1.25,
+        desc = "移速翻半，追不上",
+    },
+    iron = {
+        name = "铁壁",
+        hpMul = 2.0, dmgMul = 1.15, scaleMul = 1.3, poiseMul = 2.6,
+        knockResist = 0.35,   -- 击退只剩 35%
+        desc = "韧性极高，剑砍不出硬直",
+    },
+    regen = {
+        name = "再生",
+        hpMul = 1.8, dmgMul = 1.1, scaleMul = 1.15, poiseMul = 1.2,
+        regen = 0.02,         -- 每秒回 2% 最大血
+        desc = "每秒回 2% 血，拖着打就白打",
+    },
+    split = {
+        name = "分裂",
+        hpMul = 1.6, dmgMul = 1.0, scaleMul = 1.2, poiseMul = 1.0,
+        splitInto = 2,
+        desc = "死亡时分裂成两只小的",
+    },
+}
+
+-- 顺序固定，供确定性抽取
+Mob.AFFIX_ORDER = { "burst", "swift", "iron", "regen", "split" }
+
+Mob.ELITE_SCALE = 1.3
+Mob.ELITE_HP = 2.2
 
 function Mob.new(type, x, y, opts)
     opts = opts or {}
@@ -88,20 +146,45 @@ function Mob.new(type, x, y, opts)
     self.barY = 30
     self.exp = s.exp
     self.elite = false
+    self.affix = nil
+    self.deathHandled = false
+    self.spdMul = 1
 
-    -- 精英词缀「爆裂」：血量翻倍、体型变大，死亡时炸一圈。
-    -- 只做一条词缀，是为了先把「词缀能改变战斗行为」这件事验证掉
-    if opts.elite then
-        self.elite = true
-        self.hp = self.hp * 2.2
-        self.maxHp = self.hp
-        self.dmg = self.dmg * 1.25
-        self.scale = self.scale * 1.3
-        self.poiseMax = self.poiseMax * 1.6
-        self.poise = self.poiseMax
-        self.barW = 32
-        self.barY = 38
+    -- 精英：M1 只有一条「爆裂」，M2 扩到五条
+    local affixId = opts.affix
+    if not affixId and opts.elite then affixId = "burst" end
+    if affixId then
+        local A = Mob.AFFIX[affixId]
+        if A then
+            self.elite = true
+            self.affix = affixId
+            self.hp = self.hp * (A.hpMul or Mob.ELITE_HP)
+            self.maxHp = self.hp
+            self.dmg = self.dmg * (A.dmgMul or 1.2)
+            self.scale = self.scale * (A.scaleMul or Mob.ELITE_SCALE)
+            self.poiseMax = self.poiseMax * (A.poiseMul or 1.5)
+            self.poise = self.poiseMax
+            if A.speedMul then self.speed = self.speed * A.speedMul end
+            if A.chaseMul then self.chase = self.chase * A.chaseMul end
+            self.knockResist = A.knockResist or 0
+            self.regen = A.regen or 0
+            self.barW = 32
+            self.barY = 38
+        end
     end
+
+    -- 分裂出来的小怪：不再分裂，体型和血量都缩一圈
+    if opts.small then
+        self.elite = false
+        self.affix = nil
+        self.hp = self.hp * 0.35
+        self.maxHp = self.hp
+        self.dmg = self.dmg * 0.7
+        self.scale = self.scale * 0.68
+        self.noSplit = true
+        self.barW = 18
+    end
+
     return self
 end
 
@@ -113,10 +196,24 @@ function Mob:alive()
     return not self.dead
 end
 
--- 受击。poise 归零会硬直——这是「斧比剑重」能成立的地方：
--- 剑砍傀儡几乎打不出硬直，斧能，所以打高韧性目标必须换武器
+--[[
+    受击。poise 归零会硬直——这是「斧比剑重」能成立的地方：
+    剑砍傀儡几乎打不出硬直，斧能，所以打高韧性目标必须换武器
+
+    易伤（雷痕）在这里消耗，而不是在 Combat 里，是为了让**所有**伤害来源
+    都吃这个加成：爆炸、掉落、Boss 的溅射都算。
+    只在玩家挥砍里生效的话，玩家会发现「雷芯配爆炸没反应」。
+]]
 function Mob:hurt(dmg, dir, poise)
     if self.dead then return end
+
+    -- 雷痕：+30%，一次性
+    local vuln = Status.vulnMul(self)
+    if vuln ~= 1 then
+        dmg = dmg * vuln
+        Status.consumeShock(self)
+    end
+
     self.hp = self.hp - dmg
     self.hurtFlash = 0.14
     self.poise = self.poise - (poise or 0)
@@ -124,8 +221,11 @@ function Mob:hurt(dmg, dir, poise)
         self.poise = self.poiseMax
         self.stagger = 0.45
     end
-    self.vx = (dir or 1) * 55
-    if not self.gravity then self.vy = (dir or 1) * 20 end
+
+    local k = 1 - (self.knockResist or 0)
+    self.vx = (dir or 1) * 55 * k
+    if not self.gravity then self.vy = (dir or 1) * 20 * k end
+
     if self.hp <= 0 then
         self.hp = 0
         self.dead = true
@@ -158,6 +258,22 @@ function Mob:update(game, dt)
         self.vx = self.vx * 0.86
     end
 
+    -- 元素状态：DoT / 减速。DoT 直接改 hp，不走 hurt（否则每跳都击退）
+    if self.status then
+        local before = self.hp
+        Status.update(self, dt)
+        if not self.dead and self.hp <= 0 then
+            self.hp = 0
+            self.dead = true
+            self.deadT = 0
+            self.anim = "dead"
+        end
+        -- 受 DoT 时闪一下，让「烧着了」这件事在视觉上有落点
+        if self.hp < before then self.hurtFlash = math.max(self.hurtFlash, 0.06) end
+    end
+    -- 霜蚀减速
+    self.spdMul = Status.speedMul(self)
+
     if self.dead then
         self.deadT = self.deadT + dt
         self.vx = self.vx * 0.9
@@ -165,6 +281,11 @@ function Mob:update(game, dt)
             self.x = self.x + self.vx * dt
         end
         return
+    end
+
+    -- 再生：只回血不复活，所以它逼玩家「打快一点」而不是「不打」
+    if self.regen and self.regen > 0 and self.hp < self.maxHp then
+        self.hp = math.min(self.maxHp, self.hp + self.maxHp * self.regen * dt)
     end
 
     local dx = p.x - self.x
@@ -179,7 +300,6 @@ function Mob:update(game, dt)
         return
     end
 
-    local s = SPEC[self.type]
     if self.type == "crawler" then
         self:aiCrawler(world, p, dx, dy, dist, aware, dt)
     elseif self.type == "flyer" then
@@ -219,20 +339,21 @@ end
 
 -- 矿虫：看见就直线冲，撞墙或到悬崖边就换向
 function Mob:aiCrawler(world, p, dx, dy, dist, aware, dt)
+    local spd = self.speed * self.spdMul
     if aware then
         self.facing = dx > 0 and 1 or -1
         self.dir = self.facing
-        self.vx = self.facing * self.speed * self.chase
+        self.vx = self.facing * spd * self.chase
         self.anim = "run"
     else
-        self.vx = self.dir * self.speed * 0.55
+        self.vx = self.dir * spd * 0.55
         self.anim = "run"
     end
 
     if self.hitWall then
         self.dir = -self.dir
         self.facing = self.dir
-        self.vx = self.dir * self.speed * 0.6
+        self.vx = self.dir * spd * 0.6
     elseif self.onGround and not self:groundAhead(world) then
         -- 前方是空的：巡逻时掉头；追人时直接跳下去（追击比保命重要）
         if aware then
@@ -256,7 +377,7 @@ function Mob:aiFlyer(world, p, dx, dy, dist, aware, dt)
         -- 正弦扰动：纯直线追踪太容易被预判，加了摆动才有「躲不开」的错觉
         self.vy = self.vy + math.sin(self.animT * 6) * 42
         local sp = math.sqrt(self.vx ^ 2 + self.vy ^ 2)
-        local max = self.speed * self.chase
+        local max = self.speed * self.chase * self.spdMul
         if sp > max and sp > 0 then
             self.vx = self.vx / sp * max
             self.vy = self.vy / sp * max
@@ -295,7 +416,7 @@ function Mob:aiBlob(game, world, p, dx, dy, dist, aware, dt)
                 ax, ay = ax / len, ay / len
                 game:spawnProjectile({
                     x = cx, y = cy, vx = ax * 190, vy = ay * 190 - 30,
-                    dmg = self.dmg, kind = "venom", life = 3.0,
+                    dmg = self.dmg, kind = "venom", life = 3.0, hostile = true,
                 })
             end
         end
@@ -306,7 +427,7 @@ end
 function Mob:aiGolem(world, p, dx, dy, dist, aware, dt)
     if aware and math.abs(dy) < 60 then
         self.facing = dx > 0 and 1 or -1
-        self.vx = self.facing * self.speed * self.chase
+        self.vx = self.facing * self.speed * self.chase * self.spdMul
         self.anim = "run"
         if self.hitWall and self.onGround then
             self.vy = -330

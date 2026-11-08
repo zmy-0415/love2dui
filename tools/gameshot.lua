@@ -9,6 +9,7 @@
         luajit tools/gameshot.lua <输出路径> [场景] [放大倍数]
 
     场景：surface（地表） / cave（洞穴） / boss（石喉战） / mine（挖矿）
+          combat（M2 战斗：元素状态 + 多目标 + 箭）
 ]]
 
 local here = (arg and arg[0]) or "tools/gameshot.lua"
@@ -19,6 +20,7 @@ local sr = require("tools.softraster")
 local Game = require("game.game")
 local Mob = require("game.core.mob")
 local World = require("game.core.world")
+local Status = require("game.core.status")
 
 local out = arg[1] or "shot.bmp"
 local scene = arg[2] or "surface"
@@ -53,6 +55,56 @@ elseif scene == "cave" then
     game.mobs[#game.mobs + 1] = Mob.new("crawler", p.x + 60, p.y - 8)
     game.mobs[#game.mobs + 1] = Mob.new("blob", p.x + 120, p.y - 8)
     for _ = 1, 20 do game:update(1 / 60, {}) end
+
+elseif scene == "combat" then
+    -- M2 的战斗展示：镰刀（群体不衰减）+ 三种元素状态 + 精英标记 + 飞行中的箭
+    settle(30)
+    for _ = 1, 40 do game:update(1 / 60, { right = true }) end
+    game:equip({
+        class = "sickle", bladeMat = "crystal", bladeTier = 3,
+        hilt = "bone", hiltMat = "bone", hiltTier = 2,
+        core = "ember", coreMat = "ember", coreTier = 1,
+        affixes = { "sharp", "keen" }, seed = 7,
+    })
+    p.facing = 1
+
+    -- 三只矿虫错开摆，各自挂一种元素。
+    -- 两个细节都是踩出来的：
+    --   间距 > 血条宽度(22)，否则三条血条叠成一条，看起来像只有一只
+    --   起点 > 镰刀射程(36)，否则最后摆姿势那几帧会真的砍死一只，
+    --     图上就变成「一只粉色尸体 + 两条血条」
+    local keys = { "burn", "chill", "venom" }
+    local frac = { 0.66, 0.44, 0.26 }
+    for i = 1, 3 do
+        local m = Mob.new("crawler", p.x + 62 + (i - 1) * 30, p.y)
+        m.hp = m.maxHp * frac[i]
+        m.hurtFlash = 0
+        Status.apply(m, keys[i], 1)
+        game.mobs[#game.mobs + 1] = m
+    end
+
+    -- 精英（铁壁）放右边空地，避免血条压在树干上
+    local el = game:spawnMob("golem", p.x + 240, p.y, { affix = "iron" })
+    if el then
+        el.hp = el.maxHp * 0.52
+        el.hurtFlash = 0
+    end
+
+    -- 两支飞行中的箭（手动放，避免为了画箭去换武器，把镰刀从画面里换掉）
+    game:spawnProjectile({
+        x = p.x + 108, y = p.y - 26, vx = 420, vy = -26,
+        dmg = 20, kind = "arrow", life = 2, hostile = false,
+    })
+    game:spawnProjectile({
+        x = p.x + 152, y = p.y - 34, vx = 420, vy = 4,
+        dmg = 20, kind = "arrow", life = 2, hostile = false,
+    })
+
+    -- 空挥一刀，让画面停在判定窗口中间（武器在挥动的姿态）。
+    -- 用 Combat.start 手动起手，之后不再按左键——否则 update 里会重新
+    -- 判断「指着空气就攻击」，一路砍到判定窗口结束
+    require("game.core.combat").start(p, game.resolved)
+    for _ = 1, 9 do game:update(1 / 60, { mouseX = VW * 0.5 + 40, mouseY = VH * 0.5 }) end
 
 elseif scene == "mine" then
     settle(30)
