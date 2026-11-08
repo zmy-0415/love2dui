@@ -35,7 +35,7 @@ function M.build(ui, ctx)
       :scroll({ grow = 1, padding = 28, gap = 24, direction = "column" }, function(c)
 
           c:label("LumiUI 框架测试", { variant = "display", color = "primary" })
-          c:label("所有控件均已加载，交互结果打印到控制台（F1 切主题 / F2 调试面板）", { variant = "body", color = "muted" })
+          c:label("所有控件均已加载，交互结果打印到控制台（F1 切主题 / F2 调试面板 / Tab 切换焦点 + 空格激活）", { variant = "body", color = "muted" })
 
           -- 按钮
           c:divider({ text = "按钮 Button" })
