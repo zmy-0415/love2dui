@@ -49,7 +49,9 @@ function Tabs:getTabRects()
 end
 
 function Tabs:arrange(x, y, w, h)
+    if self:canSkipArrange(x, y, w, h) then return end
     self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
     local child = self.children[self.active]
     if child and child.visible then
         child:arrange(x, y + HEADER_H, w, h - HEADER_H)

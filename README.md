@@ -6,7 +6,7 @@
 
 - **保留模式组件树** —— 声明式链式构建，布局 / 绘制 / 事件 / 焦点由框架统一管理
 - **Flexbox + Grid 布局** —— `direction` / `gap` / `align` / `justify` / `grow` / `wrap` / 百分比尺寸；网格布局（`cols` / `colSpan` / `rowSpan`）、绝对定位（`position` / `anchor`）、响应式断点（`hideBelow` / `hideAbove`）
-- **性能优化** —— 子树 Canvas 缓存（`cache`）、scissor 裁剪快速剔除、表格/树可视行虚拟化（2000 行如 20 行）；绘制热路径零临时表（圆角顶点缓冲复用）、颜色/字体状态去重、文本测宽 LRU 缓存
+- **性能优化** —— 增量布局（几何未变且子树干净的兄弟整棵剪枝，只重排变化路径）、子树 Canvas 缓存（`cache`）、scissor 裁剪快速剔除、表格/树可视行虚拟化（2000 行如 20 行）；绘制热路径零临时表（圆角顶点缓冲复用）、颜色/字体状态去重、文本测宽 LRU 缓存
 - **Material Design 3** —— 深 / 浅两套主题，圆角、阴影、状态过渡动画、点击波纹
 - **交互与动效** —— 悬浮层统一进出场动画（缩放 + 滑入）、弹窗遮罩淡入 + 面板缩放、下拉箭头旋转补间、轮播拖拽切页（边界阻尼回弹）、滑块键盘方向键、Toast 类型图标 + 滑入滑出
 - **键盘可操作** —— `Tab` / `Shift+Tab` 焦点循环、模态内焦点陷阱、`Enter` / `Space` 激活、单选组与标签页方向键、焦点自动滚入视口；焦点环只在键盘操作时点亮
@@ -176,22 +176,25 @@ LUMI_VERIFY=1 love .
 
 自检会先构建当前示例跑一遍界面级回归（弹窗命中 / UTF-8 光标 / IME / 剪贴板 / 百分比布局 /
 z-index / 主题切换 / 调试面板），再执行完整测试套件，输出形如
-`[TEST] 310 total, 310 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，
+`[TEST] 334 total, 334 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，
 某组抛异常只记一条失败，不会中断其余用例。
 
 完整套件并不需要 LÖVE：`tests/love_stub.lua` 用假后端拼出最小的全局 `love`，
-因此下面三条都能在任意装了 Lua 的机器上跑（CI 的三套解释器都跑）：
+因此下面五条都能在任意装了 Lua 的机器上跑（CI 的三套解释器都跑）：
 
 ```bash
-luajit tests/full.lua         # 完整套件（310 条），无需 LÖVE
+luajit tests/full.lua         # 完整套件（334 条），无需 LÖVE
 luajit tests/headless.lua     # 无全局 love 的建树/布局/绘制/事件冒烟（11 条）
 luajit tests/examples.lua     # 每个示例：建树 → 布局 → 两帧绘制（49 条）
+luajit tests/bench.lua        # 布局基准：全量 / 滚动 / 增量三种场景的耗时与剪枝率
+luajit tests/fuzz_layout.lua  # 增量布局对拍：随机变更 120 次，逐节点比对增量结果与从头构建
 ```
 
 `headless.lua` 验证框架在没有全局 `love` 时仍能工作，并用假时钟复现光标闪烁；
-`examples.lua` 逐个构建 `examples/` 下的示例，防止 API 变更后示例静默失效。
+`examples.lua` 逐个构建 `examples/` 下的示例，防止 API 变更后示例静默失效；
+`fuzz_layout.lua` 是增量布局的保险丝——剪枝漏掉一个节点就会在第一步对拍里暴露。
 
-CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 下 full + headless + examples、
+CI（`.github/workflows/ci.yml`）跑三件事：多版本 Lua 下 full + headless + examples + bench + fuzz、
 xvfb + 软件渲染下的真实 LÖVE 自检、`luacheck` 静态检查。
 
 ## 📦 打包发布

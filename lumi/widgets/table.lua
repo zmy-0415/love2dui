@@ -46,6 +46,11 @@ function Table:getColWidths()
     return widths
 end
 
+-- 行高会按可用高裁剪（min(h, availH)），高度依赖 availH
+function Table:dependsOnAvailH()
+    return true
+end
+
 function Table:measureContent(availW, availH)
     local headerH = self.props.headerHeight or 40
     local rowH = self.props.rowHeight or 36
@@ -55,7 +60,9 @@ function Table:measureContent(availW, availH)
 end
 
 function Table:arrange(x, y, w, h)
+    if self:canSkipArrange(x, y, w, h) then return end
     self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
     local headerH = self.props.headerHeight or 40
     local rowH = self.props.rowHeight or 36
     self.contentH = headerH + #(self.props.rows or {}) * rowH

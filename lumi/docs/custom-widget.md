@@ -9,6 +9,7 @@ LumiUI 采用保留模式组件树。所有控件都继承自 `Widget`（`lumi/w
 |---|---|---|
 | `init(props)` | 构造后初始化（设置自身字段） | 可选 |
 | `measureContent(availW, availH)` | 返回控件优选尺寸 (w, h) | 必须（叶子控件） |
+| `dependsOnAvailH()` | 高度是否随可用高度变化（百分比高 / 按可用高裁剪内容） | 可选（默认 false） |
 | `arrange(x, y, w, h)` | 设置自身矩形并布局子节点 | 仅容器 |
 | `onUpdate(dt)` | 每帧更新（动画、状态过渡） | 可选 |
 | `drawContent()` | 绘制控件内容（自身矩形内） | 必须 |
@@ -20,6 +21,18 @@ LumiUI 采用保留模式组件树。所有控件都继承自 `Widget`（`lumi/w
 | `emit(name, ...)` | 触发用户回调（如 onChanged） | 调用即可 |
 
 **容器控件**需把 `self.acceptsChildren = true`（叶子控件默认 false）。
+
+覆写 `arrange` 的容器建议保留增量布局的剪枝入口：矩形没变且子树干净时直接返回，
+否则每次布局都会把自己整棵子树重排一遍。
+
+```lua
+function MyList:arrange(x, y, w, h)
+    if self:canSkipArrange(x, y, w, h) then return end
+    self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
+    -- ...重新计算内部几何 / 排布子节点
+end
+```
 
 ## 二、子类化范式
 

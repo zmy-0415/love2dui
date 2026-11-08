@@ -85,7 +85,9 @@ function debug.draw(ui)
     -- 信息面板
     local f = font.get(12)
     draw.setFont(f)
-    local lines = { "LumiUI Debug", "FPS: " .. fps, "Nodes: " .. nodeCount }
+    local st = ui.layoutStats
+    local layout = st and (st.arranged .. " arranged / " .. st.pruned .. " pruned") or "-"
+    local lines = { "LumiUI Debug", "FPS: " .. fps, "Nodes: " .. nodeCount, "Layout: " .. layout }
     local maxLines = 32
     local function walk(node, depth)
         if #lines >= maxLines or not node or not node.visible then return end

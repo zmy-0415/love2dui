@@ -81,6 +81,11 @@ function Tree:invalidateFlatten()
     self:invalidate()
 end
 
+-- 行高会按可用高裁剪（min(h, availH)），高度依赖 availH
+function Tree:dependsOnAvailH()
+    return true
+end
+
 function Tree:measureContent(availW, availH)
     local h = #self:getRows() * ROW_H
     if availH and availH > 0 then h = math.min(h, availH) end
@@ -88,7 +93,9 @@ function Tree:measureContent(availW, availH)
 end
 
 function Tree:arrange(x, y, w, h)
+    if self:canSkipArrange(x, y, w, h) then return end
     self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
     self.contentH = #self:getRows() * ROW_H
     self.viewH = h
     self:clampScroll()

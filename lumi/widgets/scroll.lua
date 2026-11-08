@@ -25,6 +25,11 @@ function Scroll.new(props)
     return self
 end
 
+-- 内容高会被裁到可用高：高度确实依赖 availH，测量缓存不能放宽约束复用
+function Scroll:dependsOnAvailH()
+    return true
+end
+
 function Scroll:measureContent(availW, availH)
     local cw, ch = layout.measureContainer(self, availW, math.huge)
     local maxH = (availH and availH > 0) and availH or ch
@@ -32,18 +37,29 @@ function Scroll:measureContent(availW, availH)
 end
 
 function Scroll:arrange(x, y, w, h)
+    -- 视口与内容都没变时整棵跳过：滚动只做坐标平移，不会让布局变脏
+    if self:canSkipArrange(x, y, w, h) then return end
     self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
     local pt, pr, pb, pl = self:resolvePadding()
     local cw = w - pl - pr
     local _, ch = layout.measureContainer(self, cw, math.huge)
     self.contentH = ch + pt + pb
     self.viewH = h
     self:clampScroll()
-    -- 先按滚动量 0 布局子树，再整体平移烘焙到当前滚动位置，
-    -- 使子树坐标始终为屏幕坐标（scissor/hitTest 直接可用），同时滚动无需重测重排
-    self._bakedY = 0
-    layout.arrangeChildrenSized(self, cw, ch)
-    self:_applyScroll(self.scrollY)
+    --[[
+        子树坐标始终是屏幕坐标。老做法是「先按滚动量 0 排布，再整体平移到滚动位置」，
+        平移后每个子节点的矩形都变了，增量布局的剪枝全部失效（滚动区一有改动就全量重排）。
+
+        这里改成直接以「内容原点 = 视口 y - 滚动量」排布：没变化的子节点排完仍落在
+        原位置，矩形不变 -> 剪枝生效；排完子树已经在当前滚动位置，不需要再平移。
+    ]]
+    local vy = self.y
+    self.y = vy - self.scrollY
+    local ok, err = pcall(layout.arrangeChildrenSized, self, cw, ch)
+    self.y = vy
+    if not ok then error(err, 0) end
+    self._bakedY = self.scrollY
 end
 
 function Scroll:clampScroll()

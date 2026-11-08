@@ -10,6 +10,7 @@ local animate = require("lumi.animate")
 local event = require("lumi.event")
 local font = require("lumi.font")
 local draw = require("lumi.draw")
+local Node = require("lumi.node")
 local tooltip = require("lumi.widgets.tooltip")
 local Icon = require("lumi.widgets.icon")
 
@@ -118,6 +119,7 @@ function Scene.new()
     self._keyboard = false   -- 最近一次交互是否来自键盘（决定焦点环是否可见）
     self.width, self.height = platform.windowSize()
     self._layoutDirty = true
+    self.layoutStats = { arranged = 0, pruned = 0 }
     self._tooltipTarget = nil
     self._tooltipTimer = 0
     self.tooltipNode = nil
@@ -540,15 +542,23 @@ function Scene:update(dt)
     for _, o in ipairs(self.overlays) do
         o:update(dt)
     end
-    -- 仅在布局脏时重排（构建/动态增删/主题切换/resize），滚动与动画帧不再全量重排
+    -- 仅在布局脏时重排（构建/动态增删/主题切换/resize），滚动与动画帧不再全量重排。
+    -- 一次重排中几何未变且子树干净的节点会被整棵剪掉，只重排变化路径与受其影响的兄弟。
     if self._layoutDirty then
         self._layoutDirty = false
+        Node.layoutStats.arranged = 0
+        Node.layoutStats.pruned = 0
         if self.root then
             self.root:arrange(0, 0, self.width, self.height)
         end
         for _, o in ipairs(self.overlays) do
             if o.w and o.h then o:arrange(o.x, o.y, o.w, o.h) end
         end
+        -- 最近一次布局的命中情况，调试面板/性能测试读取
+        self.layoutStats = {
+            arranged = Node.layoutStats.arranged,
+            pruned = Node.layoutStats.pruned,
+        }
     end
     -- 聚焦输入框时，持续把系统文本输入区域同步到其最新位置（输入法候选窗定位）
     if self.focus and self.focus.updateTextInput then

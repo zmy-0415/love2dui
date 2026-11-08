@@ -280,9 +280,11 @@ local function measureWrapped(node, availW, availH)
     local p = node.props
     local dir = p.direction or "column"
     local gap = p.gap or 0
-    local mainAvail = (dir == "column") and availH or availW
+    local pt, pr, pb, pl = node:resolvePadding()
+    local contentW = (availW and availW > 0) and (availW - pl - pr) or availW
+    local mainAvail = (dir == "column") and availH or contentW
     if not mainAvail or mainAvail <= 0 then mainAvail = math.huge end
-    local recs = flexCollect(node, availW, availH, availW)
+    local recs = flexCollect(node, contentW, availH, contentW)
     fillMainCross(recs, dir)
     local lines = groupLines(recs, gap, mainAvail)
     local mainContent = 0
@@ -292,7 +294,6 @@ local function measureWrapped(node, availW, availH)
         crossContent = crossContent + line.crossMax
         if i > 1 then crossContent = crossContent + gap end
     end
-    local pt, pr, pb, pl = node:resolvePadding()
     if dir == "column" then
         return crossContent + pl + pr, mainContent + pt + pb
     end
@@ -310,7 +311,11 @@ function layout.measureContainer(node, availW, availH)
     local p = node.props
     local dir = p.direction or "column"
     local gap = p.gap or 0
-    local recs = flexCollect(node, availW, availH, availW)
+    local pt, pr, pb, pl = node:resolvePadding()
+    -- 子节点可用宽度是内容宽（不含 padding）：arrange 阶段传的就是内容宽，
+    -- 两处不一致会让子节点的测量缓存键永远对不上，每个脏帧都要重测一遍
+    local contentW = (availW and availW > 0) and (availW - pl - pr) or availW
+    local recs = flexCollect(node, contentW, availH, contentW)
     fillMainCross(recs, dir)
     local totalMain = 0
     local maxCross = 0
@@ -322,7 +327,6 @@ function layout.measureContainer(node, availW, availH)
     if count > 1 then
         totalMain = totalMain + gap * (count - 1)
     end
-    local pt, pr, pb, pl = node:resolvePadding()
     if dir == "column" then
         return maxCross + pl + pr, totalMain + pt + pb
     end

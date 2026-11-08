@@ -54,6 +54,9 @@ function Node.new(props)
     self._measureCache = nil
     self._sorted = nil
     self._nextOrder = 0
+    -- 子树脏标记：自身或任一后代需要重排时为 true，由 invalidate() 沿父链向上点亮。
+    -- arrange() 据此判断「几何没变 + 子树干净」时可以整棵跳过（增量布局）。
+    self._subtreeDirty = true
     self:init(self.props)
     return self
 end
@@ -66,6 +69,8 @@ function Node:init() end
 function Node:invalidate()
     self._measureCache = nil
     self._cacheCv = nil
+    self._hDepend = nil
+    self._subtreeDirty = true
     if self.parent then
         self.parent:invalidate()
     elseif self._ctx then
@@ -77,6 +82,8 @@ end
 function Node:clearMeasureCache()
     self._measureCache = nil
     self._cacheCv = nil
+    self._hDepend = nil
+    self._subtreeDirty = true
     for _, c in ipairs(self.children) do
         c:clearMeasureCache()
     end
@@ -270,13 +277,48 @@ function Node:resolveDim(v, avail)
     return nil
 end
 
+--[[
+    高度是否依赖可用高度 availH。
+
+    布局分两趟：measure 用「父容器给的可用空间」量子节点，arrange 用「自己的内容尺寸」量，
+    同一节点在两次调用里的 availH 往往不同（父容器高 366，本行内容高只有 40）。
+    对高度与 availH 无关的节点，两个约束只是「足够大」程度不同，结果一样，可以复用缓存；
+    百分比高度、滚动类控件（内容高被裁到可用高）则必须按精确约束重算。
+]]
+function Node:dependsOnAvailH()
+    local d = self._hDepend
+    if d == nil then
+        d = type(self.props.h or self.props.height) == "string"
+        if not d and self.acceptsChildren then
+            for _, c in ipairs(self.children) do
+                if c.visible and c:dependsOnAvailH() then
+                    d = true
+                    break
+                end
+            end
+        end
+        self._hDepend = d
+    end
+    return d
+end
+
 -- 优选尺寸：显式 w/h 优先，否则取内容尺寸，再受 min/max 约束（带缓存）
 function Node:measure(availW, availH)
     local keyW = availW or -1
     local keyH = availH or -1
     local cache = self._measureCache
-    if cache and cache.kw == keyW and cache.kh == keyH then
-        return cache.mw, cache.mh
+    if cache then
+        if cache.kw == keyW and cache.kh == keyH then
+            return cache.mw, cache.mh
+        end
+        -- 宽度必须精确命中；高度约束放宽时，只要上次量出的高度没被约束顶住就直接复用
+        if cache.kw == keyW and not self:dependsOnAvailH() then
+            local oldH = cache.kh < 0 and math.huge or cache.kh
+            local newH = keyH < 0 and math.huge or keyH
+            if cache.mh <= oldH and cache.mh <= newH then
+                return cache.mw, cache.mh
+            end
+        end
     end
     local p = self.props
     local w = self:resolveDim(p.w or p.width, availW)
@@ -292,12 +334,35 @@ function Node:measure(availW, availH)
     return w, h
 end
 
+-- 增量布局统计（每次布局遍历由 Scene 清零，调试面板可读）
+-- arranged：真正重排的节点数；pruned：几何未变而被整棵跳过的子树根数
+Node.layoutStats = { arranged = 0, pruned = 0 }
+
+--[[
+    是否可以跳过本次重排。
+
+    条件是「矩形完全没变」且「子树干净」。子树的坐标是绝对屏幕坐标，
+    父节点位置不变时后代的坐标也不会变，所以跳过是安全的；
+    一旦本节点或任一后代调用了 invalidate()，_subtreeDirty 会沿父链点亮，
+    这条路径上的节点都会照常重排，只有旁支被剪掉。
+]]
+function Node:canSkipArrange(x, y, w, h)
+    if x == self.x and y == self.y and w == self.w and h == self.h and not self._subtreeDirty then
+        Node.layoutStats.pruned = Node.layoutStats.pruned + 1
+        return true
+    end
+    return false
+end
+
 function Node:arrange(x, y, w, h)
+    if self:canSkipArrange(x, y, w, h) then return end
     -- 尺寸变化时使子树缓存失效
     if self.props.cache and self._cacheCv and (w ~= self._cacheW or h ~= self._cacheH) then
         self._cacheCv = nil
     end
     self.x, self.y, self.w, self.h = x, y, w, h
+    self._subtreeDirty = false
+    Node.layoutStats.arranged = Node.layoutStats.arranged + 1
     self:arrangeChildren()
 end
 

@@ -1277,6 +1277,145 @@ local function testKeyboard()
     check("Esc 后面板状态清空", menu._open == nil and menu._panel == nil)
 end
 
+-- ---------------- 增量布局 ----------------
+
+-- 探针容器：记录 arrangeChildren 被调用的次数（剪枝时不会走到这里）
+local ProbeBox
+do
+    ProbeBox = setmetatable({}, { __index = Box })
+    ProbeBox.__index = ProbeBox
+    function ProbeBox.new(props)
+        local self = Box.new(props or {})
+        setmetatable(self, ProbeBox)
+        self.rearranges = 0
+        return self
+    end
+    function ProbeBox:arrangeChildren()
+        self.rearranges = self.rearranges + 1
+        return Box.arrangeChildren(self)
+    end
+end
+
+local function snapshotRects(node, out)
+    out[#out + 1] = string.format("%d,%d,%d,%d", node.x, node.y, node.w, node.h)
+    for _, c in ipairs(node.children) do snapshotRects(c, out) end
+end
+
+local function testIncrementalLayout()
+    -- ---- 旁支剪枝 ----
+    local ui = lumi.new({ width = 300, height = 400 })
+    local cards = {}
+    ui:root({ direction = "column", gap = 4, padding = 8 }, function(r)
+        for i = 1, 3 do
+            local card = ProbeBox.new({ direction = "column", padding = 6 })
+            cards[i] = card
+            r:add(card, function(c)
+                c:label("卡片 " .. i)
+            end)
+        end
+    end)
+    ui:update(1 / 60)
+    eq("首帧每张卡片各重排一次", cards[1].rearranges, 1)
+
+    cards[3].children[1]:setProp("text", "卡片 3 改过的内容")
+    ui:update(1 / 60)
+    eq("改动之外的兄弟不重排（第 1 张）", cards[1].rearranges, 1)
+    eq("改动之外的兄弟不重排（第 2 张）", cards[2].rearranges, 1)
+    eq("改动路径上的卡片重排", cards[3].rearranges, 2)
+    check("布局统计记录剪枝数", ui.layoutStats.pruned >= 2)
+    check("布局统计记录重排数", ui.layoutStats.arranged >= 2)
+
+    ui:invalidateLayout()
+    ui:update(1 / 60)
+    eq("全量失效时所有卡片重新重排", cards[1].rearranges, 2)
+    eq("全量失效没有剪枝", ui.layoutStats.pruned, 0)
+
+    -- ---- 几何一致性：文本变长把后续兄弟整体推下去 ----
+    local LONG = "很长的一段文本，会折成好几行，从而把后面的兄弟节点整体往下推，用来验证增量重排的传播"
+    local function buildList(text3)
+        local scene = lumi.new({ width = 240, height = 400 })
+        scene:root({ direction = "column", gap = 6, padding = 10 }, function(r)
+            for i = 1, 6 do
+                r:box({ direction = "column" }, function(row)
+                    row:label(i == 3 and text3 or ("第 " .. i .. " 行"), { wrap = true, w = 180 })
+                end)
+            end
+        end)
+        scene:update(1 / 60)
+        return scene
+    end
+    local inc = buildList("第 3 行")
+    local first = inc.root.children[1]
+    local y1 = first.y
+    inc.root.children[3].children[1]:setProp("text", LONG)
+    inc:update(1 / 60)
+    eq("变化之前的兄弟位置不变", first.y, y1)
+    check("变化之后的兄弟被推下去", inc.root.children[4].y > inc.root.children[3].y + inc.root.children[3].h)
+
+    local full = buildList(LONG)
+    local ra, rb = {}, {}
+    snapshotRects(inc.root, ra)
+    snapshotRects(full.root, rb)
+    local same = (#ra == #rb)
+    if same then
+        for i = 1, #ra do
+            if ra[i] ~= rb[i] then same = false break end
+        end
+    end
+    check("增量重排后的几何与全量构建完全一致", same)
+
+    -- ---- 滚动区：外部变化不碰内部，内部变化只重排改动行 ----
+    local sui = lumi.new({ width = 300, height = 200 })
+    local rows = {}
+    sui:root({ direction = "column" }, function(r)
+        r:label("标题")
+        r:scroll({ h = 120, direction = "column" }, function(s)
+            for i = 1, 12 do
+                local row = ProbeBox.new({ direction = "column" })
+                rows[i] = row
+                s:add(row, function(c) c:label("行 " .. i) end)
+            end
+        end)
+    end)
+    sui:update(1 / 60)
+    local sc = sui.root.children[2]
+    local yBefore = rows[5].y
+    sc:setScroll(40)
+    local yAfterScroll = rows[5].y
+    eq("滚动只平移坐标，不触发重排", rows[5].rearranges, 1)
+    eq("滚动后子节点坐标随滚动量偏移", yAfterScroll, yBefore - 40)
+
+    sui.root.children[1]:setProp("text", "标题改了")
+    sui:update(1 / 60)
+    eq("滚动区外的变化不重排滚动区", rows[5].rearranges, 1)
+    eq("滚动区外的变化不改变滚动偏移", rows[5].y, yAfterScroll)
+
+    rows[6].children[1]:setProp("text", "行 6 改了")
+    sui:update(1 / 60)
+    eq("滚动区内改动不波及前面的行", rows[5].rearranges, 1)
+    eq("滚动区内改动重排改动行", rows[6].rearranges, 2)
+    eq("滚动位置在重排后保持", sc.scrollY, 40)
+
+    -- ---- 测量缓存放宽 ----
+    local lb = Label.new({ text = "abc" })
+    local _, h1 = lb:measure(100, 50)
+    local _, h2 = lb:measure(100, 500)
+    eq("高度约束放宽时结果相同", h2, h1)
+    eq("放宽命中没有重算（缓存键仍是首次的约束）", lb._measureCache.kh, 50)
+
+    local pct = Box.new({ w = 100, h = "50%" })
+    eq("百分比高度按首个约束解析", select(2, pct:measure(100, 100)), 50)
+    eq("百分比高度换约束后重算", select(2, pct:measure(100, 200)), 100)
+
+    local padded = Box.new({ direction = "column", padding = 20 })
+    local wl = Label.new({ text = "这是一段需要换行的长文本内容啊", wrap = true })
+    padded:addChild(wl)
+    local _, hAt160 = wl:measure(160, nil)
+    local _, hAt200 = wl:measure(200, nil)
+    check("内容宽更窄时换行更早", hAt160 > hAt200)
+    eq("padding 容器按内容宽测量子节点", select(2, padded:measure(200, nil)), hAt160 + 40)
+end
+
 -- ---------------- 主题 ----------------
 
 local function testTheme()
@@ -1451,6 +1590,7 @@ function M.run()
         { "场景", testScene },
         { "交互", testInteractivity },
         { "键盘与焦点", testKeyboard },
+        { "增量布局", testIncrementalLayout },
         { "主题", testTheme },
         { "后端注入", testPlatform },
         { "属性更新", testSetProps },

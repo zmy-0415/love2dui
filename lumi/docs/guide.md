@@ -122,6 +122,8 @@ end)
 | `ui:setFocus(node)` | 手动设置焦点（`nil` 取消） |
 | `ui:focusNext(reverse)` | 把焦点移到下一个/上一个可聚焦控件 |
 | `ui:focusScope()` | 当前焦点作用域（有模态时为该模态，否则为根节点） |
+| `ui:invalidateLayout()` | 强制全量重排（清空整棵树测量缓存） |
+| `ui.layoutStats` | 最近一次重排统计：`{ arranged = N, pruned = M }` |
 
 ---
 
@@ -373,10 +375,34 @@ end)
 
 ```lua
 ui:root({ direction = "row" }, function(r)
-    r:box({ hideBelow = 700, ... }) -- 容器内容宽 < 700 时隐藏
-    r:box({ hideAbove = 700, ... }) -- 容器内容宽 > 700 时隐藏
+    r:box({ hideBelow = 700, ... })   -- 容器内容宽 < 700 时隐藏
+    r:box({ hideAbove = 700, ... })   -- 容器内容宽 > 700 时隐藏
 end)
 ```
+
+### 布局失效与增量重排
+
+框架不会每帧重排：只有调用过 `invalidate()`（`setProp` / `setProps` / 增删子节点会自动调用）
+的场景才会在下一帧重排，并且**只重排变化路径**——几何没变、子树又没变的兄弟节点会被整棵剪掉。
+
+```lua
+label:setProp("text", "新文案")   -- 自动失效，下一帧只重排这条路径
+-- 直接改 node.props.text = "..." 不会失效，布局保持旧值（别这么写）
+```
+
+| 场景 | 是否重排 | 说明 |
+|---|---|---|
+| `setProp` / `setProps` | 是 | 布局类属性重排，纯外观属性（`bg` / `color` 等）只丢 Canvas 缓存 |
+| `addChild` / `removeChild` / `clearChildren` | 是 | 结构变化 |
+| `ui:setTheme()` / `ui:invalidateLayout()` / `ui:resize()` | 是（全量） | 清空整棵树的测量缓存 |
+| 滚动（`setScroll` / 滚轮 / 惯性） | 否 | 只平移已排好的坐标 |
+| 动画补间 `x` / `y` / `w` / `h` | 否 | 动画帧不触发重排；需要随动画改布局请显式 `invalidate()` |
+
+调试面板（`F2`）里的 `Layout: N arranged / M pruned` 就是最近一次重排的命中情况；
+`ui.layoutStats` 也可在代码里读。基准脚本 `tests/bench.lua` 会打印全量/增量/滚动的耗时对比。
+
+> 自定义控件若在 `measureContent` 里让高度依赖可用高度 `availH`（例如按可用高裁剪内容），
+> 需要覆写 `dependsOnAvailH()` 返回 `true`，否则不同空闲高度之间可能复用测量缓存。
 
 ---
 
