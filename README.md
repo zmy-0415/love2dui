@@ -36,6 +36,7 @@ love . data         # 表格 / 树 / 轮播
 love . theme        # 主题与视觉定制
 love . hud          # 游戏内 HUD（UI 叠在游戏画面上）
 love . art_preview  # 程序化游戏素材：角色 / 怪物 / 武器 / Boss
+love . rift         # 《裂界》垂直切片：可挖可建的沙盒动作（完整一局）
 ```
 
 `main.lua` 只是启动器，具体界面在 `examples/` 下，每个文件都是一个完整可运行的示例。
@@ -56,6 +57,7 @@ F1 切换深/浅主题，F2 打开调试面板（FPS 与节点数），这两个
 | `theme` | `examples/theme.lua` | 色板 / 字号阶梯 / 圆角与控件尺寸定制 |
 | `hud` | `examples/hud.lua` | 游戏内 HUD：`clear = false` + `drawWorld` 先画游戏再叠 UI |
 | `art_preview` | `examples/art_preview.lua` | 程序化素材：骨架角色五状态、四类怪与精英、武器重掷、Boss 三阶段 |
+| `rift` | `examples/rift.lua` | 《裂界》垂直切片：挖矿 / 建造 / 帧数据战斗 / 四类怪 / 石喉三阶段 / 合成 / 存档 |
 
 公共外壳在 `examples/boot.lua`，负责窗口标题、事件转发与全局快捷键。
 新增示例只需导出一张 `{ title, build(ui, ctx) }` 表，并把名字加进 `main.lua` 的 `EXAMPLES` 列表；
@@ -164,15 +166,21 @@ function love.resize(w, h) ui:resize(w, h) end
 │   ├── widgets/             # 全部内置控件
 │   └── docs/                # 文档与截图
 ├── game/                    # 游戏侧代码（与框架无关，只依赖 love.graphics）
-│   └── art/                 # 程序化美术：骨架 / 皮肤 / 武器 / Boss / 色板
+│   ├── core/                # 纯逻辑：世界 / 物理 / 玩家 / 战斗 / 怪物 / Boss / 存档
+│   ├── render/              # 渲染：方块世界 / 实体 / HUD 叠加
+│   ├── data/                # 数值表：武器帧数据 / 合成配方
+│   ├── art/                 # 程序化美术：骨架 / 皮肤 / 武器 / Boss / 色板
+│   └── game.lua             # 主循环：世界 + 玩家 + 相机 + 掉落 + 怪物 + Boss
 ├── tools/                   # 开发工具
 │   ├── softraster.lua       # 纯 Lua 软光栅：没有显卡也能出图
-│   └── artsheet.lua         # 素材总览图与视觉回归
+│   ├── artsheet.lua         # 素材总览图与视觉回归
+│   └── gameshot.lua         # 游戏画面截图（地表 / 洞穴 / 挖矿 / Boss 战）
 ├── docs/                    # 设计文档与方案
 │   ├── game-design.md       # 《裂界》游戏设计
+│   ├── game-m1.md           # M1 垂直切片：做了什么、怎么玩、已知问题
 │   └── art-assets.md        # 素材方案（先算、再借、最后才画）
 ├── demo/                    # 自定义控件示例（星级评分）
-└── tests/                   # 测试：套件 / 自检 / 无头冒烟 / 美术断言
+└── tests/                   # 测试：套件 / 自检 / 无头冒烟 / 美术断言 / 游戏核心断言
 ```
 
 ## 🧪 测试

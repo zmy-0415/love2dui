@@ -18,7 +18,7 @@ local newBackend = dofile(dir .. "/fake_backend.lua")
 local lumi = require("lumi")
 
 -- 与 main.lua 中的列表保持一致
-local EXAMPLES = { "minimal", "layout", "forms", "editor", "data", "theme", "showcase", "hud", "art_preview" }
+local EXAMPLES = { "minimal", "layout", "forms", "editor", "data", "theme", "showcase", "hud", "art_preview", "rift" }
 
 local total, failed = 0, 0
 local function ok(desc, cond)

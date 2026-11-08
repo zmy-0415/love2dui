@@ -1744,6 +1744,9 @@ function M.run()
         { "程序化美术", function()
             require("tests.art").test({ check = check, eq = eq, draws = draws })
         end },
+        { "游戏核心", function()
+            require("tests.game").test({ check = check, eq = eq, draws = draws })
+        end },
         { "主题", testTheme },
         { "后端注入", testPlatform },
         { "属性更新", testSetProps },

@@ -186,7 +186,7 @@ function C.crawler(skin)
     local unit = skin.size or 1
 
     local body = {
-        name = "seg1", at = 0, shape = "circle", radius = 3.8 * unit, col = shell,
+        name = "seg1", at = 0, shape = "circle", radius = 4.6 * unit, col = shell,
         children = {
             { name = "eye", ax = 1.6 * unit, off = 2.2 * unit, shape = "circle",
               radius = 1.0 * unit, col = "ink", outline = 0, shade = false,
@@ -199,34 +199,48 @@ function C.crawler(skin)
     }
 
     -- 身体往后串：每节挂在上一节尾部，同时记下每节的节点引用，供挂腿用
+    -- 身体链：所有节都保持 rest = 0（本地轴 = 世界轴），靠负的 ax 往身后排。
+    --
+    -- 踩过两个坑，记在这里：
+    -- 1) 圆形节点没有 len，子节点写 at = 1 会落在原点，三节全糊成一团。
+    --    所以这里明确给每节 len，并且用 ax 而不是 at 排布。
+    -- 2) 如果节写成 rest = PI（朝后），它的本地 X 轴会翻向左、Y 轴翻向上，
+    --    挂在它身上的腿再用 ax/off 就会长到身体上方去。保持 rest = 0，
+    --    整条链的坐标系一致，挂点才好算。
+    local prevR = 4.6 * unit
     local segNodes = { body }
     local tail = body
     for i = 2, segs do
+        local r = (4.6 - (i - 1) * 0.55) * unit
         local s = {
-            name = "seg" .. i, at = 1, rest = PI, shape = "circle",
-            radius = (3.8 - (i - 1) * 0.5) * unit, col = shell,
+            name = "seg" .. i, at = 0, ax = -(prevR + r * 0.92),
+            rest = 0, len = r * 2, shape = "circle", radius = r, col = shell,
             step = i % 2 == 0 and "dark" or "base",
         }
         tail.children = tail.children or {}
         table.insert(tail.children, s)
         segNodes[i] = s
         tail = s
+        prevR = r
     end
 
-    -- 腿：每节一对，朝下外展。左右两侧用不同明度，一眼能看出前后
+    -- 腿：每节一对，从身体下缘伸出。左右明度不同，一眼能看出前后
     for i = 1, math.min(segs, 3) do
         local host = segNodes[i]
         if host then
             host.children = host.children or {}
+            local r = host.radius
             for _, side in ipairs({ { "l", 1 }, { "r", -1 } }) do
                 local legNode = {
-                    name = "leg_" .. i .. side[1], at = 0, ax = side[2] * 2.6 * unit,
-                    rest = PI / 2 + side[2] * 0.55, len = 4.2 * unit,
-                    w0 = 1.5 * unit, w1 = 1.0 * unit, col = legCol,
+                    -- 挂点必须在身体边缘：ax 用半径 + 一点余量
+                    name = "leg_" .. i .. side[1], at = 0,
+                    ax = side[2] * (r + 0.6), off = r * 0.35,
+                    rest = PI / 2 + side[2] * 0.55, len = 5.4 * unit,
+                    w0 = 1.5 * unit, w1 = 0.9 * unit, col = legCol,
                     step = side[2] > 0 and "dark" or "base",
                     children = {
                         { name = "foot_" .. i .. side[1], at = 1, rest = PI / 2 + side[2] * 0.2,
-                          len = 2.4 * unit, w0 = 1.0 * unit, w1 = 0.7 * unit,
+                          len = 2.6 * unit, w0 = 1.0 * unit, w1 = 0.6 * unit,
                           col = legCol, step = side[2] > 0 and "dark" or "base" },
                     },
                 }
@@ -276,17 +290,23 @@ end
 function C.flyer(skin)
     skin = skin or {}
     local body = skin.body or "void"
-    local r = skin.size or 3.4
+    -- 翼膜单独给个颜色。和身体同色时整只蝙蝠会糊成一个椭圆，
+    -- 完全看不出有翅膀；浅色膜 + 深色身体才有剪影
+    local membrane = skin.wing or "ice"
+    local r = skin.size or 4.0
 
     local function wing(side, step)
         return {
             name = "wing_" .. side, ax = 0.6, off = (side == "far" and -2.2 or 2.2),
-            rest = 0, shape = "poly", col = body, step = step,
+            rest = 0, shape = "poly", col = membrane, step = step,
+            -- 翼膜朝身后展开。朝前的版本在侧视图里就是一根尖刺，
+            -- 完全读不出「翅膀」；朝后张开的三角才有翼膜的感觉
             points = {
                 0, 0,
-                6.5, -3.4,
-                9.0, 0.6,
-                5.2, 2.2,
+                -5.0, -4.6,
+                -10.5, -2.0,
+                -8.0, 1.6,
+                -3.0, 2.2,
             },
         }
     end
@@ -367,6 +387,39 @@ function C.pose(kind, anim, t, opt)
             pose.thigh_near = -0.5 * u
             pose.thigh_far = -0.3 * u
             extra.bob = 3 * u
+        elseif anim == "jump" then
+            -- 起跳：双腿收起、手臂上举。剪影要一眼能和跑区分开
+            pose.thigh_near = -0.62
+            pose.shin_near = 0.95
+            pose.thigh_far = -0.22
+            pose.shin_far = 0.55
+            pose.arm_near = -1.85
+            pose.arm_far = -1.35
+            pose.fore_near = -0.45
+            pose.torso = -0.10
+            extra.bob = -1.4
+        elseif anim == "fall" then
+            -- 下落：腿分开、手臂张开，靠剪影判断「正在掉」
+            pose.thigh_near = 0.38
+            pose.shin_near = -0.28
+            pose.thigh_far = -0.34
+            pose.shin_far = 0.18
+            pose.arm_near = -1.15
+            pose.arm_far = -0.95
+            pose.torso = 0.06
+            pose.head = -0.08
+        elseif anim == "dig" then
+            -- 挖掘：前下方短促上下摆。频率高一些，否则挖起来像在打太极
+            local ph = t * 13
+            pose.arm_near = -0.95 + math.sin(ph) * 0.55
+            pose.fore_near = -0.35 + math.sin(ph + 0.9) * 0.45
+            pose.arm_far = -0.55 + math.sin(ph + PI) * 0.30
+            pose.torso = 0.20 + math.sin(ph) * 0.06
+            pose.head = 0.16
+            pose.thigh_near = 0.10
+            pose.thigh_far = -0.10
+            pose.shin_near = 0.12
+            extra.bob = math.abs(math.sin(ph)) * 0.6
         else -- idle
             local ph = t * 2.1
             local s = math.sin(ph)
