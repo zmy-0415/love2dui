@@ -7,11 +7,13 @@ local platform = require("lumi.platform")
 
 local lumi = {}
 
-lumi.version = "0.5.1"
+lumi.version = "0.6.0"
 
 --- 创建场景
---  @param opts table 可选：{ backend = <表>, width = <数>, height = <数> }
---         backend 用于替换 LÖVE 后端（测试/移植），省略时使用全局 love
+--  @param opts table 可选：
+--         { backend = <表>, width = <数>, height = <数>, clear = <布尔> }
+--         backend 用于替换 LÖVE 后端（测试/移植），省略时使用全局 love；
+--         clear = false 时 draw() 不清屏，用于把 UI 叠在游戏画面之上
 function lumi.new(opts)
     opts = opts or {}
     if opts.backend then
@@ -20,6 +22,9 @@ function lumi.new(opts)
         platform.ensure()
     end
     local scene = require("lumi.context").new()
+    if opts.clear ~= nil then
+        scene.clearBackground = opts.clear and true or false
+    end
     if opts.width or opts.height then
         scene:resize(opts.width or scene.width, opts.height or scene.height)
     end

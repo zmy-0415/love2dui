@@ -6,6 +6,9 @@
         return {
             title = "布局",                     -- 窗口标题后缀
             build = function(ui, ctx) ... end,  -- 在 ui:root 内构建界面
+            clear = false,                      -- 可选：关掉整屏清屏（游戏 HUD 场景）
+            drawWorld = function(t) ... end,    -- 可选：在 UI 之下先画游戏画面
+            update = function(dt) ... end,      -- 可选：每帧逻辑（与 UI 无关的游戏状态）
         }
 
     ctx 提供：
@@ -25,6 +28,7 @@ local lumi = require("lumi")
 local boot = {}
 
 local scene           -- 当前场景
+local currentDef      -- 当前示例定义（draw / update 里要用到可选钩子）
 local installed = false
 
 local function setTitle(text)
@@ -47,12 +51,17 @@ local function install()
 
     function love.update(dt)
         if not scene then return end
+        if currentDef and currentDef.update then currentDef.update(dt) end
         scene:update(dt)
         lumi.debug.update(dt)
     end
 
     function love.draw()
         if not scene then return end
+        -- 游戏场景：先画世界，再叠 UI（场景已关掉清屏）
+        if currentDef and currentDef.drawWorld then
+            currentDef.drawWorld(love.timer.getTime())
+        end
         scene:draw()
         lumi.debug.draw(scene)
     end
@@ -103,7 +112,9 @@ end
 --  @param name string 示例标识，用于窗口标题
 function boot.start(def, name)
     install()
-    scene = lumi.new()
+    currentDef = def
+    -- def.clear == false 时不清屏，保留 drawWorld 画好的游戏画面
+    scene = lumi.new({ clear = def.clear ~= false })
 
     local ctx = {
         name = name,

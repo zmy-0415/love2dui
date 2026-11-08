@@ -8,6 +8,7 @@
         love . editor       多行编辑器
         love . data         表格 / 树 / 图片轮播
         love . theme        主题与视觉定制
+        love . hud          游戏内 HUD（UI 叠在游戏画面上）
 
     各示例的实现都在 examples/ 下，见 examples/boot.lua 的说明。
 
@@ -20,7 +21,7 @@ local boot = require("examples.boot")
 local DEFAULT = "showcase"
 
 -- 可用示例（顺序即帮助输出顺序）
-local EXAMPLES = { "showcase", "minimal", "layout", "forms", "editor", "data", "theme" }
+local EXAMPLES = { "showcase", "minimal", "layout", "forms", "editor", "data", "theme", "hud" }
 
 local function resolve(args)
     if type(args) ~= "table" then return DEFAULT end

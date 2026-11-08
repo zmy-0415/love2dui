@@ -1490,6 +1490,81 @@ local function testIncrementalLayout()
     eq("padding 容器按内容宽测量子节点", select(2, padded:measure(200, nil)), hAt160 + 40)
 end
 
+-- ---------------- 游戏集成（UI 叠在游戏画面之上） ----------------
+
+local function testGameIntegration()
+    -- 用探针替换后端绘制函数，统计一次 draw 里的清屏与绘制次数
+    local function spy()
+        local g = platform.graphics
+        local raw = {
+            clear = g.clear, print = g.print, printf = g.printf,
+            rectangle = g.rectangle, polygon = g.polygon,
+        }
+        local hits = { clear = 0, text = 0, rect = 0 }
+        g.clear = function(...) hits.clear = hits.clear + 1 return raw.clear(...) end
+        g.print = function(...) hits.text = hits.text + 1 return raw.print(...) end
+        g.printf = function(...) hits.text = hits.text + 1 return raw.printf(...) end
+        -- 圆角矩形走 polygon，直角走 rectangle，两者都算「铺了一块色」
+        g.rectangle = function(...) hits.rect = hits.rect + 1 return raw.rectangle(...) end
+        g.polygon = function(...) hits.rect = hits.rect + 1 return raw.polygon(...) end
+        return hits, function()
+            g.clear, g.print, g.printf = raw.clear, raw.print, raw.printf
+            g.rectangle, g.polygon = raw.rectangle, raw.polygon
+        end
+    end
+
+    -- 默认：独立应用，每帧清屏铺底色
+    local app = lumi.new()
+    app:root({ direction = "column" }, function(r) r:label("独立应用") end)
+    app:update(1 / 60)
+    local hits, restore = spy()
+    app:draw()
+    restore()
+    eq("默认场景每帧清屏一次", hits.clear, 1)
+
+    -- clear = false：HUD 场景，不清屏（否则会擦掉底下的游戏画面）
+    local hud = lumi.new({ clear = false })
+    hud:root({ direction = "column", padding = 12 }, function(r)
+        r:label("HP 100 / 100")
+        r:label("Score 1234")
+    end)
+    hud:update(1 / 60)
+    hits, restore = spy()
+    hud:draw()
+    restore()
+    eq("clear=false 时不清屏", hits.clear, 0)
+    check("clear=false 仍绘制控件内容", hits.text >= 2)
+
+    -- 根容器不设 bg 时不铺背景，游戏画面能透出来
+    hits, restore = spy()
+    hud:draw()
+    restore()
+    eq("透明根容器不绘制任何背景矩形", hits.rect, 0)
+
+    -- 显式设 bg 才铺背景
+    local panel = lumi.new({ clear = false })
+    panel:root({ bg = "surface", radius = "medium" }, function(r) r:label("面板") end)
+    panel:update(1 / 60)
+    hits, restore = spy()
+    panel:draw()
+    restore()
+    check("设了 bg 的根容器会铺背景", hits.rect > 0)
+    eq("铺背景仍不清屏", hits.clear, 0)
+
+    -- HUD 场景的事件转发与普通场景一致（点击按钮能命中）
+    local clicks = 0
+    local hb = lumi.new({ clear = false })
+    hb:root({ direction = "column", padding = 10 }, function(r)
+        r:button("开始", { onClick = function() clicks = clicks + 1 end })
+    end)
+    hb:update(1 / 60)
+    local btn = hb.root.children[1]
+    local cx, cy = btn.x + btn.w / 2, btn.y + btn.h / 2
+    hb:mousepressed(cx, cy, 1)
+    hb:mousereleased(cx, cy, 1)
+    eq("HUD 场景点击可命中", clicks, 1)
+end
+
 -- ---------------- 主题 ----------------
 
 local function testTheme()
@@ -1665,6 +1740,7 @@ function M.run()
         { "交互", testInteractivity },
         { "键盘与焦点", testKeyboard },
         { "增量布局", testIncrementalLayout },
+        { "游戏集成", testGameIntegration },
         { "主题", testTheme },
         { "后端注入", testPlatform },
         { "属性更新", testSetProps },

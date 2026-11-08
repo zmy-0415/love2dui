@@ -58,6 +58,33 @@ function love.resize(w, h) ui:resize(w, h) end
 - 通过 `love.*` 回调把事件转发给 `ui:*` 对应方法。
 - `ui:root(props)` 建立根容器，之后链式调用构建组件树。
 
+### 作为游戏 HUD 使用
+
+在已有游戏画面之上叠 UI 时，一定要传 `clear = false`，否则 `ui:draw()` 会先清屏把游戏擦掉：
+
+```lua
+function love.load()
+    ui = lumi.new({ clear = false })        -- 不清屏，保留底下已绘制的画面
+    ui:root({ direction = "row", padding = 16, gap = 12 })  -- 根容器不设 bg 就不铺底色
+      :label("HP 100 / 100", { variant = "title" })
+      :label("Score 1234")
+end
+
+function love.draw()
+    drawGameWorld()   -- 先画游戏
+    ui:draw()         -- 再叠 UI；输入框/弹窗等控件自带底色，不受影响
+end
+```
+
+要点：
+- `clear = false` 只关掉整屏清屏；控件自身的背景、弹窗遮罩照常绘制。
+- 根容器不设 `bg` 就完全透明，游戏画面直接透出来；需要底部面板时给局部容器设 `bg`，别给整棵树设。
+- 事件转发与独立应用完全一致，`mousepressed` 等照常调用，UI 不会吞掉游戏输入（框架不消费事件，只是自己也处理一份）。
+- 想让 UI 只响应特定区域时，把根容器改成固定尺寸的盒子（例如右下角的小面板）即可，空白处不命中任何控件。
+
+完整可运行的样板见 `examples/hud.lua`（`love . hud`）：星野与绕行敌人由 `love.graphics` 直接绘制，
+HUD 层是普通控件，包含血条、分数、操作按钮与设置弹窗。
+
 ---
 
 ## 核心概念

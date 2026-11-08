@@ -118,6 +118,8 @@ function Scene.new()
     self._mouseX, self._mouseY = 0, 0
     self._keyboard = false   -- 最近一次交互是否来自键盘（决定焦点环是否可见）
     self.width, self.height = platform.windowSize()
+    -- 默认每帧清屏（独立应用）；做游戏内 HUD 时置 false，保留底下已绘制的画面
+    self.clearBackground = true
     self._layoutDirty = true
     self.layoutStats = { arranged = 0, pruned = 0 }
     self._tooltipTarget = nil
@@ -617,7 +619,10 @@ function Scene:drawToasts()
 end
 
 function Scene:draw()
-    platform.graphics.clear(theme.color("background"))
+    -- 游戏内 HUD 场景关闭清屏，否则会把刚画好的游戏画面擦掉
+    if self.clearBackground then
+        platform.graphics.clear(theme.color("background"))
+    end
     if self.root then self.root:draw() end
     for _, o in ipairs(self.overlays) do
         o:draw()

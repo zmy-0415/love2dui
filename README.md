@@ -14,6 +14,7 @@
 - **多行编辑器** —— 行号、语法高亮、撤销/重做、查找/替换、横纵滚动
 - **中文友好** —— 自动探测系统中文字体，完整支持 UTF-8 光标、选区与 IME 组合输入
 - **可注入后端** —— 所有 LÖVE 调用收敛在 `lumi/platform.lua`，可替换图形/时钟/剪贴板后端；内置假时钟便于确定性测试（`lumi.new({ backend = ... })`）
+- **可叠加到游戏** —— `lumi.new({ clear = false })` 关掉整屏清屏，UI 直接叠在游戏画面上做 HUD / 菜单层，根容器不设 `bg` 即完全透明
 - **补间动画** —— 轻量 tween 系统，支持颜色表插值与多种缓动函数
 - **调试工具** —— F2 切换布局外框 / 控件树 / FPS 叠加层
 
@@ -33,6 +34,7 @@ love . forms        # 表单控件
 love . editor       # 多行编辑器（高亮 / 撤销 / 查找替换）
 love . data         # 表格 / 树 / 轮播
 love . theme        # 主题与视觉定制
+love . hud          # 游戏内 HUD（UI 叠在游戏画面上）
 ```
 
 `main.lua` 只是启动器，具体界面在 `examples/` 下，每个文件都是一个完整可运行的示例。
@@ -51,9 +53,11 @@ F1 切换深/浅主题，F2 打开调试面板（FPS 与节点数），这两个
 | `editor` | `examples/editor.lua` | 语法高亮、行号、撤销重做、查找替换 |
 | `data` | `examples/data.lua` | 2000 行表格虚拟化、树、轮播、头像 |
 | `theme` | `examples/theme.lua` | 色板 / 字号阶梯 / 圆角与控件尺寸定制 |
+| `hud` | `examples/hud.lua` | 游戏内 HUD：`clear = false` + `drawWorld` 先画游戏再叠 UI |
 
 公共外壳在 `examples/boot.lua`，负责窗口标题、事件转发与全局快捷键。
-新增示例只需导出一张 `{ title, build(ui, ctx) }` 表，并把名字加进 `main.lua` 的 `EXAMPLES` 列表。
+新增示例只需导出一张 `{ title, build(ui, ctx) }` 表，并把名字加进 `main.lua` 的 `EXAMPLES` 列表；
+游戏类示例还可选带 `clear = false`（不清屏）、`drawWorld(t)`（先画游戏画面）、`update(dt)`（每帧逻辑）。
 
 ### Windows 启动脚本
 
@@ -176,16 +180,16 @@ LUMI_VERIFY=1 love .
 
 自检会先构建当前示例跑一遍界面级回归（弹窗命中 / UTF-8 光标 / IME / 剪贴板 / 百分比布局 /
 z-index / 主题切换 / 调试面板），再执行完整测试套件，输出形如
-`[TEST] 346 total, 346 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，
+`[TEST] 353 total, 353 passed, 0 failed`，退出码 `0` 表示全部通过。测试按控件分组隔离执行，
 某组抛异常只记一条失败，不会中断其余用例。
 
 完整套件并不需要 LÖVE：`tests/love_stub.lua` 用假后端拼出最小的全局 `love`，
 因此下面五条都能在任意装了 Lua 的机器上跑（CI 的三套解释器都跑）：
 
 ```bash
-luajit tests/full.lua         # 完整套件（346 条），无需 LÖVE
+luajit tests/full.lua         # 完整套件（353 条），无需 LÖVE
 luajit tests/headless.lua     # 无全局 love 的建树/布局/绘制/事件冒烟（11 条）
-luajit tests/examples.lua     # 每个示例：建树 → 布局 → 两帧绘制（49 条）
+luajit tests/examples.lua     # 每个示例：建树 → 布局 → 两帧绘制（56 条）
 luajit tests/bench.lua        # 布局基准：全量 / 滚动 / 增量三种场景的耗时与剪枝率
 luajit tests/fuzz_layout.lua  # 增量布局对拍：随机变更 120 次，逐节点比对增量结果与从头构建
 ```
