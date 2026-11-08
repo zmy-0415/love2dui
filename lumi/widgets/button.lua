@@ -135,6 +135,13 @@ function Button:mousereleased(x, y, button, ctx, hit)
     end
 end
 
+-- 键盘激活：Enter / Space 等同于点击（按钮无鼠标坐标，不产生波纹）
+function Button:activate()
+    if self.state.disabled then return false end
+    self:emit("onClick")
+    return true
+end
+
 function Button:drawContent()
     local p = self.props
     local variant = p.variant or "filled"
@@ -178,7 +185,7 @@ function Button:drawContent()
     draw.text(text, tx, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = self._textColor })
 
     -- 键盘焦点环
-    if self.state.focused then
+    if self.state.focusVisible then
         draw.roundRectLine(self.x - 2, self.y - 2, self.w + 4, self.h + 4, radius + 2, theme.alpha("primary", 0.6), 2)
     end
 end

@@ -122,7 +122,7 @@ function Slider:drawContent()
     end
 
     -- 键盘焦点环
-    if self.state.focused then
+    if self.state.focusVisible then
         local tx, tw = self:getTrackX()
         draw.roundRectLine(tx - 6, self.y, tw + 12, self.h, self.h / 2, theme.alpha("primary", 0.5), 1.5)
     end

@@ -88,6 +88,21 @@ function Tabs:setActive(i)
     end
 end
 
+function Tabs:isFocusable()
+    return not self.state.disabled and #(self.props.tabs or {}) > 1
+end
+
+-- 方向键在标签间循环切换（左/上回退，右/下前进）
+function Tabs:keypressed(key)
+    local n = #(self.props.tabs or {})
+    if n < 2 then return end
+    if key == "left" or key == "up" then
+        self:setActive((self.active - 2) % n + 1)
+    elseif key == "right" or key == "down" then
+        self:setActive(self.active % n + 1)
+    end
+end
+
 function Tabs:onUpdate(dt)
     -- 指示器动画
     local rects = self:getTabRects()
@@ -141,6 +156,14 @@ function Tabs:draw()
     -- 下划线指示器
     if self._indicatorW > 0 then
         draw.roundRect(self._indicatorX + 16, self.y + HEADER_H - 4, self._indicatorW - 32, 3, 1.5, theme.color("primary"))
+    end
+
+    -- 键盘焦点环（画在标签头上，提示左右键可切页）
+    if self.state.focusVisible then
+        local r = rects[self.active]
+        if r then
+            draw.roundRectLine(r.x + 6, self.y + 4, r.w - 12, HEADER_H - 12, theme.shape.small, theme.alpha("primary", 0.6), 1.5)
+        end
     end
 
     -- 内容

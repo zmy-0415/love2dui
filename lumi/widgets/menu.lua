@@ -125,8 +125,37 @@ function Menu:mousepressed(x, y, button, ctx)
     end
 end
 
+function Menu:isFocusable()
+    return not self.state.disabled and #(self.props.items or {}) > 0
+end
+
+-- 键盘激活：Enter / Space 打开第一项菜单（已打开则收起）
+function Menu:activate(ctx)
+    if self.state.disabled then return false end
+    if self._open then
+        self:close(ctx)
+    else
+        self:openTop(1, ctx)
+    end
+    return true
+end
+
+-- 菜单展开时用左右键在同级菜单间切换（与桌面端菜单栏一致）
+function Menu:keypressed(key, ctx)
+    if not self._open then return end
+    local n = #(self.props.items or {})
+    if n == 0 then return end
+    if key == "right" then
+        self:openTop(self._open % n + 1, ctx)
+    elseif key == "left" then
+        self:openTop((self._open - 2) % n + 1, ctx)
+    end
+end
+
 function Menu:onUpdate(dt)
     if not self._open or not self._ctx then return end
+    -- 面板正在退场（Esc / 点到外面）时不要因为鼠标还停在菜单栏上就立刻重新展开
+    if self._panel and self._panel._closing then return end
     local x, y = self._ctx._mouseX, self._ctx._mouseY
     if y < self.y or y >= self.y + self.h then return end
     local tops = self:getTops()

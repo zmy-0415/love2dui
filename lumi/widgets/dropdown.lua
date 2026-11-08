@@ -60,6 +60,41 @@ function Dropdown:mousepressed(x, y, button, ctx)
     self:toggle(ctx)
 end
 
+-- 键盘激活：Enter / Space 展开或收起
+function Dropdown:activate(ctx)
+    if self.state.disabled then return false end
+    self:toggle(ctx)
+    return true
+end
+
+-- 选中某一项（鼠标点击与键盘方向键共用）
+function Dropdown:select(value, ctx)
+    if self.value == value then return end
+    self.value = value
+    self:emit("onChanged", value)
+    -- 键盘改值时若列表正开着，收起它：否则列表里的颜色仍是旧选中项，会看到"两个选中"
+    if self._list and ctx then
+        ctx:closeOverlay(self._list)
+        self._list = nil
+    end
+end
+
+-- 方向键：像原生 <select> 一样直接改值
+function Dropdown:keypressed(key, ctx)
+    if self.state.disabled then return end
+    if key ~= "up" and key ~= "down" then return end
+    local items = self:getItems()
+    if #items == 0 then return end
+    local idx = 0
+    for i, it in ipairs(items) do
+        if it.value == self.value then idx = i; break end
+    end
+    local dir = (key == "down") and 1 or -1
+    if idx == 0 then idx = (dir > 0) and 0 or #items + 1 end
+    idx = math.max(1, math.min(#items, idx + dir))
+    self:select(items[idx].value, ctx)
+end
+
 function Dropdown:onUpdate(dt)
     -- 箭头旋转跟随展开状态（按目标值判断，避免补间中途反复重启）
     local target = self._list and 1 or 0

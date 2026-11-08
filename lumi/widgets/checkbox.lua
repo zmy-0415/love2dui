@@ -43,9 +43,20 @@ end
 function Checkbox:mousereleased(x, y, button, ctx, hit)
     if button ~= 1 or self.state.disabled then return end
     if self.state.pressed and hit == self then
-        self.checked = not self.checked
-        self:emit("onChanged", self.checked)
+        self:toggle()
     end
+end
+
+function Checkbox:toggle()
+    self.checked = not self.checked
+    self:emit("onChanged", self.checked)
+end
+
+-- 键盘激活：Space / Enter 切换
+function Checkbox:activate()
+    if self.state.disabled then return false end
+    self:toggle()
+    return true
 end
 
 function Checkbox:drawContent()
@@ -81,7 +92,7 @@ function Checkbox:drawContent()
         draw.text(p.label, bx + size + 8, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("text") })
     end
 
-    if self.state.focused then
+    if self.state.focusVisible then
         draw.roundRectLine(bx - 3, by - 3, size + 6, size + 6, radius + 2, theme.alpha("primary", 0.6), 1.5)
     end
 end

@@ -11,15 +11,16 @@ LumiUI 是一个 LÖVE（Love2D）保留模式 Material Design UI 框架，采�
 
 1. [快速开始](#快速开始)
 2. [核心概念](#核心概念)
-3. [通用 Props](#通用-props)
-4. [布局系统](#布局系统)
-5. [组件速查](#组件速查)
-6. [组件详解](#组件详解)
-7. [主题系统](#主题系统)
-8. [动画系统](#动画系统)
-9. [自定义控件](#自定义控件)
-10. [调试工具](#调试工具)
-11. [完整案例](#完整案例)
+3. [键盘与焦点](#键盘与焦点)
+4. [通用 Props](#通用-props)
+5. [布局系统](#布局系统)
+6. [组件速查](#组件速查)
+7. [组件详解](#组件详解)
+8. [主题系统](#主题系统)
+9. [动画系统](#动画系统)
+10. [自定义控件](#自定义控件)
+11. [调试工具](#调试工具)
+12. [完整案例](#完整案例)
 
 ---
 
@@ -119,6 +120,69 @@ end)
 | `ui:toast("消息")` | 底部弹出提示，2.5 秒后消失 |
 | `ui:closeTopOverlay()` / `ui:closeAllOverlays()` | 关闭顶层/全部悬浮层 |
 | `ui:setFocus(node)` | 手动设置焦点（`nil` 取消） |
+| `ui:focusNext(reverse)` | 把焦点移到下一个/上一个可聚焦控件 |
+| `ui:focusScope()` | 当前焦点作用域（有模态时为该模态，否则为根节点） |
+
+---
+
+## 键盘与焦点
+
+框架自带一套完整的键盘操作，鼠标能用的事情键盘基本都能做。
+
+### 焦点顺序
+
+- 按绘制顺序遍历可聚焦控件，`Tab` 前进、`Shift+Tab` 后退，首尾循环。
+- 可聚焦控件的判定是 `isFocusable()`：按钮、复选框、开关、单选框、滑块、下拉框、标签页、菜单栏，以及输入框/编辑器。
+- `disabled = true` 的控件不可聚焦，`visible = false` 或被隐藏的标签页内容会被整棵跳过。
+- `Esc`：先关闭最顶层悬浮层（下拉/菜单/弹窗），没有悬浮层时清除焦点。
+
+### 焦点作用域
+
+| 场景 | Tab 行为 |
+|---|---|
+| 普通页面 | 在根节点子树内循环 |
+| 模态弹窗打开 | 只在弹窗内循环，不会跑到被遮住的控件上；打开时焦点自动移入弹窗 |
+| 下拉/菜单展开 | 第一次 `Tab` 先收起浮层，再继续导航 |
+
+### 激活与方向键
+
+| 控件 | `Enter` / `Space` | 方向键 |
+|---|---|---|
+| button | 触发 `onClick` | — |
+| checkbox / switch | 切换并触发 `onChanged` | — |
+| radio | 选中自己 | 组内上下左右移动选中项与焦点 |
+| dropdown | 展开/收起列表 | ↑/↓ 直接改值（原生 `<select>` 行为） |
+| tabs | — | ←/↑ 上一页，→/↓ 下一页（循环） |
+| menu | 展开/收起第一项菜单 | 展开时 ←/→ 切换同级菜单 |
+| slider | — | ←/→ 或 ↑/↓ 按步长调整 |
+| input / editor | 回车提交 / 换行（不被激活逻辑吞掉） | 光标移动、Home/End、PageUp/PageDown |
+
+### 焦点环与滚动
+
+- 焦点环只在**键盘**操作得到焦点时绘制；鼠标点出来的焦点不画环（避免点击后一直亮着）。
+- `Tab` 到视口外的控件会自动滚动到可见位置（`node:reveal()`，由内向外逐层处理嵌套滚动区）。
+
+### 自定义控件接入键盘
+
+```lua
+function MyWidget:isFocusable()
+    return not self.state.disabled
+end
+
+-- Enter / Space：返回 true 表示按键已消费
+function MyWidget:activate(ctx)
+    if self.state.disabled then return false end
+    self:emit("onClick")
+    return true
+end
+
+-- 方向键等其余按键
+function MyWidget:keypressed(key, ctx)
+    if key == "left" then ... end
+end
+```
+
+绘制焦点环时用 `self.state.focusVisible` 而不是 `self.state.focused`，才能跟鼠标点击区分开。
 
 ---
 
@@ -523,6 +587,8 @@ ui:editor({
 
 三者均为 `props.checked` 初始状态 + `onChanged(checked)` 回调。
 
+键盘：`Tab` 聚焦后 `Space` / `Enter` 切换；单选组内用 `↑`/`↓`/`←`/`→` 移动选中项。
+
 **checkbox**：
 
 ```lua
@@ -617,6 +683,8 @@ end)
 
 展开时列表自锚点缩放滑入（Material 菜单风格），箭头 180° 旋转补间；点击外部或选中后自动收起。
 
+键盘：聚焦后 `Enter` / `Space` 展开收起，`↑` / `↓` 像原生 `<select>` 一样直接改值（列表开着时会同时收起）。
+
 ```lua
 ui:dropdown({
     items = { "Windows", "macOS", "Linux", "Android", "iOS", "Web" },
@@ -643,6 +711,8 @@ ui:dropdown({
 | `tabs` | 字符串数组 | 标签名 |
 | `active` | number | 起始页（1 基，默认 1） |
 | `onChanged` | function(index) | 切换回调 |
+
+键盘：聚焦标签栏后 `←` / `→`（或 `↑` / `↓`）切页，首尾循环。
 
 ```lua
 ui:tabs({ tabs = { "概览", "详情", "设置" }, active = 1, onChanged = function(i) print(i) end }, function(t)
@@ -755,6 +825,8 @@ ui:menu({
 ```
 
 点击展开下拉，悬停可在已展开状态下切换菜单。
+
+键盘：聚焦菜单栏后 `Enter` / `Space` 展开第一项，展开时 `←` / `→` 切换同级菜单，`Esc` 收起。
 
 ---
 
@@ -1064,11 +1136,14 @@ ui:root({ direction = "row" })
 | `drawContent()` | 绘制内容 |
 | `drawBackground()` | 通用背景/阴影/边框 |
 | `isFocusable()` | 是否可聚焦（Tab 可达） |
+| `activate(ctx)` | 键盘 Enter / Space 激活，返回 `true` 表示已消费 |
+| `reveal(margin)` | 把节点滚入最近的滚动祖先视口（框架在聚焦时自动调用） |
 | `mousepressed/released/moved/wheelmoved` | 鼠标事件钩子 |
 | `keypressed/textinput/textedited` | 键盘与文本事件钩子 |
 | `emit(name, ...)` | 触发用户回调 |
 
-- 状态：`self.state` 含 `hovered / pressed / focused / disabled`，由框架维护。
+- 状态：`self.state` 含 `hovered / pressed / focused / focusVisible / disabled`，由框架维护；
+  画焦点环请用 `focusVisible`（只在键盘操作时点亮），`focused` 表示"持有焦点"。
 - 内容变化需调用 `self:invalidate()` 使布局缓存失效。
 - 容器控件需设置 `self.acceptsChildren = true`。
 - 需要滚轮事件（并阻止冒泡到外层滚动容器）时设置 `self.isScroll = true`。

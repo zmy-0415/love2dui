@@ -14,6 +14,7 @@ LumiUI 采用保留模式组件树。所有控件都继承自 `Widget`（`lumi/w
 | `drawContent()` | 绘制控件内容（自身矩形内） | 必须 |
 | `drawBackground()` | 通用背景/阴影/边框（读 props.bg/elevation/border） | 可选 |
 | `isFocusable()` | 是否可聚焦（Tab 键到达） | 可选 |
+| `activate(ctx)` | 键盘 Enter / Space 激活，返回 `true` 表示已消费 | 可选 |
 | `mousepressed/released/moved/wheelmoved` | 鼠标事件钩子 | 可选 |
 | `keypressed` / `textinput` / `textedited` | 键盘与文本事件钩子 | 可选 |
 | `emit(name, ...)` | 触发用户回调（如 onChanged） | 调用即可 |
@@ -84,8 +85,9 @@ end
 
 ## 五、注意事项
 
-- **状态**：`self.state` 含 `hovered / pressed / focused / disabled`，由框架维护，
-  读取它实现悬停/按压样式。
+- **状态**：`self.state` 含 `hovered / pressed / focused / focusVisible / disabled`，由框架维护，
+  读取它实现悬停/按压样式。`focused` 表示持有焦点，`focusVisible` 表示"焦点来自键盘"——
+  画焦点环请用后者，否则鼠标点一下控件焦点环会一直亮着。
 - **主题**：通过 `require("lumi.theme")` 取色，`self:resolveColor(c)` 支持色名/颜色表。
 - **文本**：使用 `require("lumi.font")` 与 `require("lumi.draw")` 的工具（已处理 CJK）。
 - **颜色/字体**：请用 `draw.setColor(...)`、`draw.setFont(...)` 代替 `love.graphics.setColor/setFont`。

@@ -134,7 +134,7 @@ function Avatar:drawContent()
     end
 
     -- 键盘焦点环
-    if self.state.focused then
+    if self.state.focusVisible then
         platform.graphics.setLineWidth(2)
         draw.setColor(theme.alpha("primary", 0.6))
         platform.graphics.circle("line", cx, cy, r + 2)

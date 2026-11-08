@@ -117,7 +117,7 @@ function Image:drawContent()
     end
 
     -- 键盘焦点环
-    if self.state.focused then
+    if self.state.focusVisible then
         draw.roundRectLine(self.x - 2, self.y - 2, self.w + 4, self.h + 4, radius + 2, theme.alpha("primary", 0.6), 2)
     end
 end

@@ -46,9 +46,20 @@ end
 function Switch:mousereleased(x, y, button, ctx, hit)
     if button ~= 1 or self.state.disabled then return end
     if self.state.pressed and hit == self then
-        self.checked = not self.checked
-        self:emit("onChanged", self.checked)
+        self:toggle()
     end
+end
+
+function Switch:toggle()
+    self.checked = not self.checked
+    self:emit("onChanged", self.checked)
+end
+
+-- 键盘激活：Space / Enter 切换
+function Switch:activate()
+    if self.state.disabled then return false end
+    self:toggle()
+    return true
 end
 
 function Switch:drawContent()
@@ -75,7 +86,7 @@ function Switch:drawContent()
         draw.text(p.label, self.x + TRACK_W + 8, self.y + (self.h - f:getHeight()) / 2, 0, { font = f, color = theme.color("text") })
     end
 
-    if self.state.focused then
+    if self.state.focusVisible then
         draw.roundRectLine(self.x - 3, by - 3, TRACK_W + 6, TRACK_H + 6, TRACK_H / 2 + 2, theme.alpha("primary", 0.6), 1.5)
     end
 end

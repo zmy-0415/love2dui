@@ -1054,6 +1054,229 @@ local function testInteractivity()
     check("toast 超时自动移除", #tui.toasts == 0)
 end
 
+-- ---------------- 键盘与焦点 ----------------
+
+local function ancestorOf(node, root)
+    local n = node
+    while n do
+        if n == root then return true end
+        n = n.parent
+    end
+    return false
+end
+
+-- 未进入退场动画的浮层数量（关闭是延迟的，栈里会短暂残留 _closing 的节点）
+local function liveOverlays(ui)
+    local n = 0
+    for _, o in ipairs(ui.overlays) do
+        if not o._closing then n = n + 1 end
+    end
+    return n
+end
+
+-- 跑完退场动画，让浮层真正出栈
+local function settle(ui)
+    for _ = 1, 30 do
+        lumi.animate.update(1 / 60)
+        ui:update(1 / 60)
+    end
+end
+
+local function testKeyboard()
+    -- ---- Tab 顺序 / 激活 / 焦点环 ----
+    local ui = lumi.new({ width = 400, height = 300 })
+    local clicks, checked, switched, picked = 0, nil, nil, nil
+    ui:root({ direction = "column", padding = 10, gap = 6 }, function(r)
+        r:button("A", { onClick = function() clicks = clicks + 1 end })
+        r:checkbox({ label = "C", onChanged = function(v) checked = v end })
+        r:switch({ label = "S", onChanged = function(v) switched = v end })
+        r:dropdown({ items = { "x", "y", "z" }, value = "x", onChanged = function(v) picked = v end })
+    end)
+    ui:update(1 / 60)
+    local btn, cb, sw, dd = ui.root.children[1], ui.root.children[2], ui.root.children[3], ui.root.children[4]
+
+    ui:keypressed("tab")
+    check("Tab 从第一个可聚焦控件开始", ui.focus == btn)
+    check("键盘聚焦标记焦点环可见", btn.state.focusVisible == true)
+
+    ui:keypressed("tab")
+    check("Tab 前进到复选框", ui.focus == cb)
+    ui:keypressed("space")
+    eq("Space 勾选复选框", checked, true)
+    check("复选框状态已翻转", cb.checked == true)
+
+    ui:keypressed("tab")
+    check("Tab 前进到开关", ui.focus == sw)
+    ui:keypressed("return")
+    eq("Enter 切换开关", switched, true)
+
+    ui:keypressed("tab")
+    check("Tab 前进到下拉框", ui.focus == dd)
+    ui:keypressed("down")
+    eq("下拉框方向键改值", dd.value, "y")
+    eq("下拉框方向键触发 onChanged", picked, "y")
+    ui:keypressed("up")
+    eq("下拉框向上回到首项", dd.value, "x")
+    ui:keypressed("return")
+    eq("Enter 展开下拉列表", liveOverlays(ui), 1)
+    ui:keypressed("tab")
+    local opened = ui.overlays[#ui.overlays]
+    check("Tab 让展开的下拉列表开始收起", opened ~= nil and opened._closing == true)
+    settle(ui)
+    eq("退场后浮层出栈", #ui.overlays, 0)
+
+    -- 首尾循环
+    ui:setFocus(dd)
+    ui:keypressed("tab")
+    check("Tab 到末尾后回到第一个", ui.focus == btn)
+
+    -- Shift+Tab 反向（拦截后端按键状态，两个环境都能验证）
+    local rawIsDown = platform.isDown
+    platform.isDown = function(k) return k == "lshift" end
+    ui:keypressed("tab")
+    platform.isDown = rawIsDown
+    check("Shift+Tab 反向回到末尾", ui.focus == dd)
+
+    -- 按钮激活
+    ui:setFocus(btn)
+    ui:keypressed("space")
+    eq("Space 触发按钮 onClick", clicks, 1)
+    ui:keypressed("kpenter")
+    eq("小键盘回车同样触发 onClick", clicks, 2)
+
+    -- 焦点环：鼠标聚焦不画，键盘聚焦才画
+    local rawLine = draw.roundRectLine
+    local rings = 0
+    draw.roundRectLine = function(...) rings = rings + 1; return rawLine(...) end
+    local bx, by = btn.x + btn.w / 2, btn.y + btn.h / 2
+    ui:mousepressed(bx, by, 1)
+    ui:mousereleased(bx, by, 1)
+    check("鼠标聚焦不标记焦点环", btn.state.focused == true and btn.state.focusVisible == false)
+    btn:drawContent()
+    eq("鼠标聚焦不绘制焦点环", rings, 0)
+    ui:keypressed("tab")
+    ui:setFocus(btn)
+    btn:drawContent()
+    eq("键盘聚焦绘制焦点环", rings, 1)
+    draw.roundRectLine = rawLine
+
+    -- ---- 模态焦点陷阱 ----
+    ui:setFocus(btn)
+    ui:dialog({ title = "弹窗" }, function(p)
+        p:button("确定")
+        p:button("取消")
+    end)
+    ui:update(1 / 60)
+    local dlg = ui.modal
+    check("模态打开后焦点自动进入模态", dlg ~= nil and ancestorOf(ui.focus, dlg))
+    ui:keypressed("tab")
+    check("模态内 Tab 仍停在模态内", ancestorOf(ui.focus, dlg))
+    ui:keypressed("tab")
+    ui:keypressed("tab")
+    check("模态内 Tab 循环不逃到背后控件", ancestorOf(ui.focus, dlg))
+
+    -- 模态之上的下拉浮层仍可键盘操作（Esc 逐层关闭）
+    ui:keypressed("escape")
+    settle(ui)
+    check("Esc 关闭模态", ui.modal == nil)
+
+    -- 输入框回车不被激活逻辑吞掉
+    local iui = lumi.new({ width = 300, height = 200 })
+    local submitted = nil
+    iui:root({}, function(r)
+        r:input({ onSubmit = function(t) submitted = t end })
+    end)
+    iui:update(1 / 60)
+    iui:keypressed("tab")
+    iui:textinput("hi")
+    iui:keypressed("return")
+    eq("输入框回车照常提交", submitted, "hi")
+
+    -- ---- 单选组方向键 ----
+    local rui = lumi.new({ width = 300, height = 200 })
+    local changes = 0
+    rui:root({ direction = "column" }, function(r)
+        for i = 1, 3 do
+            r:radio({ label = "R" .. i, group = "g", checked = i == 1, onChanged = function() changes = changes + 1 end })
+        end
+    end)
+    rui:update(1 / 60)
+    local r1, r2, r3 = rui.root.children[1], rui.root.children[2], rui.root.children[3]
+    rui:keypressed("tab")
+    check("Tab 聚焦第一个单选项", rui.focus == r1)
+    rui:keypressed("down")
+    check("方向键把选中移到下一个", r2.checked == true and r1.checked == false)
+    check("方向键同时移动焦点", rui.focus == r2)
+    rui:keypressed("up")
+    check("反方向键回到上一个", r1.checked == true and r2.checked == false)
+    eq("单选切换各触发一次 onChanged", changes, 2)
+    check("末尾继续向下循环到首项", (function()
+        rui:keypressed("up")
+        local before = rui.focus
+        rui:keypressed("down")
+        return before == r3
+    end)())
+
+    -- ---- 标签页方向键 ----
+    local tui = lumi.new({ width = 300, height = 200 })
+    local active = nil
+    tui:root({}, function(r)
+        r:tabs({ tabs = { "一", "二", "三" }, active = 1, onChanged = function(i) active = i end }, function(t)
+            t:label("页1")
+            t:label("页2")
+            t:label("页3")
+        end)
+    end)
+    tui:update(1 / 60)
+    local tabsNode = tui.root.children[1]
+    tui:keypressed("tab")
+    check("Tab 聚焦标签栏", tui.focus == tabsNode)
+    tui:keypressed("right")
+    eq("右键切到下一页", tabsNode.active, 2)
+    eq("切页触发 onChanged", active, 2)
+    tui:keypressed("left")
+    tui:keypressed("left")
+    eq("左键在首页回环到最后一页", tabsNode.active, 3)
+
+    -- ---- 焦点自动滚入视口 ----
+    local sui = lumi.new({ width = 300, height = 200 })
+    sui:root({ direction = "column" }, function(r)
+        r:scroll({ h = 100 }, function(s)
+            for i = 1, 6 do s:button("B" .. i, { h = 40 }) end
+        end)
+    end)
+    sui:update(1 / 60)
+    local sc = sui.root.children[1]
+    eq("滚动区初始不滚动", sc.scrollY, 0)
+    for _ = 1, 6 do sui:keypressed("tab") end
+    check("Tab 到视口外的控件时自动滚动", sc.scrollY > 0)
+
+    -- ---- 菜单键盘 ----
+    local mui = lumi.new({ width = 400, height = 300 })
+    local hit = 0
+    mui:root({}, function(r)
+        r:menu({
+            items = {
+                { label = "文件", items = { { label = "新建", onClick = function() hit = hit + 1 end } } },
+                { label = "帮助", items = { { label = "关于" } } },
+            },
+        })
+    end)
+    mui:update(1 / 60)
+    local menu = mui.root.children[1]
+    mui:keypressed("tab")
+    check("Tab 聚焦菜单栏", mui.focus == menu)
+    mui:keypressed("return")
+    eq("Enter 展开首个菜单", liveOverlays(mui), 1)
+    mui:keypressed("right")
+    eq("右键切到下一个同级菜单", menu._open, 2)
+    eq("切菜单后仍只有一个活动面板", liveOverlays(mui), 1)
+    mui:keypressed("escape")
+    settle(mui)
+    eq("Esc 收起菜单且不被悬停重新打开", #mui.overlays, 0)
+    check("Esc 后面板状态清空", menu._open == nil and menu._panel == nil)
+end
+
 -- ---------------- 主题 ----------------
 
 local function testTheme()
@@ -1227,6 +1450,7 @@ function M.run()
         { "布局", testLayout },
         { "场景", testScene },
         { "交互", testInteractivity },
+        { "键盘与焦点", testKeyboard },
         { "主题", testTheme },
         { "后端注入", testPlatform },
         { "属性更新", testSetProps },

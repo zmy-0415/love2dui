@@ -46,6 +46,8 @@ function Node.new(props)
         hovered = false,
         pressed = false,
         focused = false,
+        -- 焦点环是否可见：键盘导航得到的焦点才画环，鼠标点出来的焦点不画
+        focusVisible = false,
         disabled = self.props.disabled and true or false,
     }
     self._ctx = nil
@@ -439,10 +441,44 @@ end
 
 function Node:focus()
     self.state.focused = true
+    self.state.focusVisible = true
 end
 
 function Node:blur()
     self.state.focused = false
+    self.state.focusVisible = false
+end
+
+-- 键盘激活（Enter / Space）。可操作控件覆写并返回 true 表示已消费；
+-- 返回 false 时按键继续交给 keypressed（输入框靠这一条拿到回车/空格）。
+function Node:activate(ctx)
+    return false
+end
+
+--[[
+    把节点滚入最近的滚动祖先视口。
+
+    滚动容器的子树坐标是屏幕坐标（Scroll 在布局后整体平移烘焙），
+    所以只需比较矩形、按差值反推新的 scrollY，不必重排。
+    嵌套滚动区由内向外逐层处理：内层滚动后节点坐标同步变化，
+    外层再按新坐标继续修正。
+]]
+function Node:reveal(margin)
+    if self.w <= 0 or self.h <= 0 then return end
+    margin = margin or 6
+    local a = self.parent
+    while a do
+        if a.isScroll and a.setScroll and a.viewH and a.viewH > 0 then
+            local top = a.y + margin
+            local bottom = a.y + a.h - margin
+            if self.y < top then
+                a:setScroll(a.scrollY - (top - self.y))
+            elseif self.y + self.h > bottom then
+                a:setScroll(a.scrollY + (self.y + self.h - bottom))
+            end
+        end
+        a = a.parent
+    end
 end
 
 -- ---------------- 事件钩子（子类覆写） ----------------

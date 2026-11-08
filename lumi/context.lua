@@ -115,6 +115,7 @@ function Scene.new()
     self.focus = nil
     self.pressed = nil
     self._mouseX, self._mouseY = 0, 0
+    self._keyboard = false   -- 最近一次交互是否来自键盘（决定焦点环是否可见）
     self.width, self.height = platform.windowSize()
     self._layoutDirty = true
     self._tooltipTarget = nil
@@ -187,21 +188,7 @@ local function overlayIn(node)
     animate.to(node, { _ovT = 1 }, { duration = 0.18, easing = "cubic" })
 end
 
-function Scene:openOverlay(node, opts)
-    opts = opts or {}
-    node._overlayOpts = opts
-    node._closeNotified = nil
-    node._ctx = self
-    if opts.modal then self.modal = node end
-    table.insert(self.overlays, node)
-    if node.w and node.h then
-        node:arrange(node.x, node.y, node.w, node.h)
-    end
-    if opts.anim ~= false then overlayIn(node) end
-    return node
-end
-
--- 节点是否位于某棵子树内（浮层关闭时清理指向其内部的 hover / focus）
+-- 节点是否位于某棵子树内（浮层打开/关闭时判定焦点归属）
 local function isInside(node, root)
     local n = node
     while n do
@@ -209,6 +196,28 @@ local function isInside(node, root)
         n = n.parent
     end
     return false
+end
+
+function Scene:openOverlay(node, opts)
+    opts = opts or {}
+    node._overlayOpts = opts
+    node._closeNotified = nil
+    node._ctx = self
+    if opts.modal then
+        self.modal = node
+        -- 焦点必须跟着模态走：否则键盘输入会落到被遮住的控件上（看不见但仍在收事件）
+        if not (self.focus and isInside(self.focus, node)) then
+            local list = {}
+            event.collectFocusable(node, list)
+            self:setFocus(list[1])
+        end
+    end
+    table.insert(self.overlays, node)
+    if node.w and node.h then
+        node:arrange(node.x, node.y, node.w, node.h)
+    end
+    if opts.anim ~= false then overlayIn(node) end
+    return node
 end
 
 -- 从栈中移除浮层并统一善后：解除模态、清理 hover/focus、触发一次 onClose
@@ -327,16 +336,29 @@ function Scene:hitTest(x, y)
     return nil
 end
 
+-- 键盘 focus ring 只在「最近一次输入是键盘」时显示，鼠标点出来的焦点不画环
 function Scene:setFocus(node)
-    if self.focus == node then return end
+    if self.focus == node then
+        if node then node.state.focusVisible = self._keyboard end
+        return
+    end
     if self.focus then self.focus:blur() end
     self.focus = node
-    if node then node:focus() end
+    if node then
+        node:focus()
+        node.state.focusVisible = self._keyboard
+        node:reveal()   -- Tab 到视口外的控件时自动滚进来
+    end
+end
+
+-- 焦点作用域：模态存在时键盘导航被困在模态内，不能 Tab 到被遮住的控件
+function Scene:focusScope()
+    return self.modal or self.root
 end
 
 function Scene:focusNext(reverse)
     local list = {}
-    event.collectFocusable(self.root, list)
+    event.collectFocusable(self:focusScope(), list)
     if #list == 0 then return end
     local idx = 0
     for i, n in ipairs(list) do
@@ -370,6 +392,7 @@ end
 
 function Scene:mousepressed(x, y, button)
     self._mouseX, self._mouseY = x, y
+    self._keyboard = false   -- 鼠标交互：本次焦点不画焦点环
     -- 从最高层浮层开始：命中则交互，落空则关闭该层并吞掉这次点击（不穿透到下层）
     local from = self:_modalIndex() or 1
     for i = #self.overlays, from, -1 do
@@ -438,18 +461,30 @@ function Scene:wheelmoved(x, y)
 end
 
 function Scene:keypressed(key)
+    -- 键盘一按下就切到「键盘模态」：此后获得的焦点才显示焦点环
+    self._keyboard = true
+    if self.focus then self.focus.state.focusVisible = true end
+
     if key == "escape" then
-        if #self.overlays > 0 then
-            self:closeTopOverlay()
-            return
-        end
+        if self:closeTopOverlay() then return end
         if self.focus then self:setFocus(nil) end
         return
     end
     if key == "tab" then
+        -- 下拉/菜单这类非模态浮层先关掉，焦点不跳到被浮层盖住的控件上
+        local top = self:topOverlay()
+        if top and top ~= self.modal then
+            self:closeOverlay(top)
+            return
+        end
         local reverse = platform.isDown("lshift") or platform.isDown("rshift")
         self:focusNext(reverse)
         return
+    end
+    -- Enter / Space 激活当前焦点控件（输入类控件不实现 activate，按键照常下传）
+    if key == "return" or key == "kpenter" or key == "space" then
+        local f = self.focus
+        if f and not f.state.disabled and f:activate(self) then return end
     end
     if self.focus then self.focus:keypressed(key, self) end
 end
