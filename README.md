@@ -35,6 +35,7 @@ love . editor       # 多行编辑器（高亮 / 撤销 / 查找替换）
 love . data         # 表格 / 树 / 轮播
 love . theme        # 主题与视觉定制
 love . hud          # 游戏内 HUD（UI 叠在游戏画面上）
+love . art_preview  # 程序化游戏素材：角色 / 怪物 / 武器 / Boss
 ```
 
 `main.lua` 只是启动器，具体界面在 `examples/` 下，每个文件都是一个完整可运行的示例。
@@ -54,6 +55,7 @@ F1 切换深/浅主题，F2 打开调试面板（FPS 与节点数），这两个
 | `data` | `examples/data.lua` | 2000 行表格虚拟化、树、轮播、头像 |
 | `theme` | `examples/theme.lua` | 色板 / 字号阶梯 / 圆角与控件尺寸定制 |
 | `hud` | `examples/hud.lua` | 游戏内 HUD：`clear = false` + `drawWorld` 先画游戏再叠 UI |
+| `art_preview` | `examples/art_preview.lua` | 程序化素材：骨架角色五状态、四类怪与精英、武器重掷、Boss 三阶段 |
 
 公共外壳在 `examples/boot.lua`，负责窗口标题、事件转发与全局快捷键。
 新增示例只需导出一张 `{ title, build(ui, ctx) }` 表，并把名字加进 `main.lua` 的 `EXAMPLES` 列表；
@@ -161,8 +163,16 @@ function love.resize(w, h) ui:resize(w, h) end
 │   ├── debug.lua            # 调试叠加层
 │   ├── widgets/             # 全部内置控件
 │   └── docs/                # 文档与截图
+├── game/                    # 游戏侧代码（与框架无关，只依赖 love.graphics）
+│   └── art/                 # 程序化美术：骨架 / 皮肤 / 武器 / Boss / 色板
+├── tools/                   # 开发工具
+│   ├── softraster.lua       # 纯 Lua 软光栅：没有显卡也能出图
+│   └── artsheet.lua         # 素材总览图与视觉回归
+├── docs/                    # 设计文档与方案
+│   ├── game-design.md       # 《裂界》游戏设计
+│   └── art-assets.md        # 素材方案（先算、再借、最后才画）
 ├── demo/                    # 自定义控件示例（星级评分）
-└── tests/                   # 测试：套件 / 自检 / 无头冒烟
+└── tests/                   # 测试：套件 / 自检 / 无头冒烟 / 美术断言
 ```
 
 ## 🧪 测试

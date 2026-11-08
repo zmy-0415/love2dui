@@ -1741,6 +1741,9 @@ function M.run()
         { "键盘与焦点", testKeyboard },
         { "增量布局", testIncrementalLayout },
         { "游戏集成", testGameIntegration },
+        { "程序化美术", function()
+            require("tests.art").test({ check = check, eq = eq, draws = draws })
+        end },
         { "主题", testTheme },
         { "后端注入", testPlatform },
         { "属性更新", testSetProps },

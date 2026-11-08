@@ -21,7 +21,7 @@ local boot = require("examples.boot")
 local DEFAULT = "showcase"
 
 -- 可用示例（顺序即帮助输出顺序）
-local EXAMPLES = { "showcase", "minimal", "layout", "forms", "editor", "data", "theme", "hud" }
+local EXAMPLES = { "showcase", "minimal", "layout", "forms", "editor", "data", "theme", "hud", "art_preview" }
 
 local function resolve(args)
     if type(args) ~= "table" then return DEFAULT end
